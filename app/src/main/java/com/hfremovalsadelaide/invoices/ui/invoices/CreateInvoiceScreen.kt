@@ -10,8 +10,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
@@ -125,6 +127,8 @@ fun CreateInvoiceScreen(
         modifier = modifier
             .fillMaxSize()
             .testTag("create_invoice_screen"),
+        // The shell's NavigationBar already consumes the system navigation-bar inset.
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         containerColor = SageSurface,
         topBar = {
             CreateInvoiceTopBar(
@@ -406,7 +410,7 @@ fun CreateInvoiceScreen(
                     shape = MaterialTheme.shapes.medium,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(54.dp)
+                        .heightIn(min = 54.dp)
                         .minimumInteractiveComponentSize()
                         .testTag("submit_invoice_button")
                 ) {

@@ -10,10 +10,14 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -43,7 +47,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -113,6 +116,8 @@ fun InvoiceListScreen(
         modifier = modifier
             .fillMaxSize()
             .testTag("invoice_list_screen"),
+        // The shell's NavigationBar already consumes the system navigation-bar inset.
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         containerColor = SageSurface,
         topBar = {
             InvoicesTopBar(
@@ -120,29 +125,6 @@ fun InvoiceListScreen(
                 onSavedDocumentsClick = onSavedDocumentsClick,
                 onRefreshClick = { onRefresh(false) }
             )
-        },
-        floatingActionButton = {
-            if (uiState.loadState is InvoicesLoadState.Loaded) {
-                ExtendedFloatingActionButton(
-                    onClick = onCreateInvoiceClick,
-                    containerColor = ForestGreen,
-                    contentColor = PureWhite,
-                    icon = {
-                        Icon(
-                            imageVector = Icons.Rounded.Add,
-                            contentDescription = null,
-                            tint = GoldAccent
-                        )
-                    },
-                    text = {
-                        Text(
-                            text = stringResource(id = R.string.invoices_fab_create),
-                            style = MaterialTheme.typography.labelLarge
-                        )
-                    },
-                    modifier = Modifier.testTag("fab_create_invoice")
-                )
-            }
         }
     ) { innerPadding ->
         Box(
@@ -204,7 +186,7 @@ fun InvoiceListScreen(
                                 start = 16.dp,
                                 end = 16.dp,
                                 top = 16.dp,
-                                bottom = 96.dp
+                                bottom = 24.dp
                             ),
                             verticalArrangement = Arrangement.spacedBy(12.dp),
                             modifier = Modifier
@@ -552,6 +534,7 @@ private fun StatusFilterBar(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun InvoiceRecordCard(
     invoice: InvoiceSummary,
@@ -674,12 +657,15 @@ private fun InvoiceRecordCard(
                 HorizontalDivider(color = SageOutline.copy(alpha = 0.75f))
                 Spacer(modifier = Modifier.height(10.dp))
 
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
+                // FlowRow: amounts and actions share a line when there is room, and the actions wrap
+                // onto their own line at large font sizes instead of squeezing the labels.
+                FlowRow(
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
+                    itemVerticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Column {
+                    Column(modifier = Modifier.padding(end = 8.dp)) {
                         Text(
                             text = invoice.formattedTotal,
                             style = MaterialTheme.typography.titleLarge,
@@ -715,7 +701,9 @@ private fun InvoiceRecordCard(
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
                                 text = stringResource(id = R.string.invoices_action_pdf),
-                                style = MaterialTheme.typography.labelMedium
+                                style = MaterialTheme.typography.labelMedium,
+                                maxLines = 1,
+                                softWrap = false
                             )
                         }
 
@@ -740,7 +728,9 @@ private fun InvoiceRecordCard(
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
                                 text = stringResource(id = R.string.invoices_action_print),
-                                style = MaterialTheme.typography.labelMedium
+                                style = MaterialTheme.typography.labelMedium,
+                                maxLines = 1,
+                                softWrap = false
                             )
                         }
                     }
@@ -943,7 +933,7 @@ private fun InvoicesAuthRequiredCard(
                         shape = MaterialTheme.shapes.medium,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(50.dp)
+                            .heightIn(min = 50.dp)
                             .minimumInteractiveComponentSize()
                             .testTag("invoices_sign_in_button")
                     ) {
@@ -1020,7 +1010,7 @@ private fun InvoicesErrorCard(
                     shape = MaterialTheme.shapes.medium,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(48.dp)
+                        .heightIn(min = 48.dp)
                         .minimumInteractiveComponentSize()
                         .testTag("invoices_retry_button")
                 ) {

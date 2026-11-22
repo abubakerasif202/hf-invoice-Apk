@@ -152,8 +152,9 @@ fun MainAppShell(
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val useNavigationRail = maxWidth >= 600.dp
 
-        if (useNavigationRail) {
-            Row(modifier = Modifier.fillMaxSize()) {
+        AdaptiveShellFrame(
+            useRail = useNavigationRail,
+            rail = {
                 NavigationRail(
                     containerColor = PureWhite,
                     contentColor = ForestGreen,
@@ -174,7 +175,7 @@ fun MainAppShell(
                                     } else {
                                         destination.unselectedIcon
                                     },
-                                    contentDescription = stringResource(id = destination.labelResId)
+                                    contentDescription = null // the label below already names the destination for TalkBack
                                 )
                             },
                             label = {
@@ -194,121 +195,79 @@ fun MainAppShell(
                         )
                     }
                 }
-
-                Box(
-                    modifier = Modifier
-                        .fillMaxHeight()
-                        .background(SageOutline)
-                        .padding(end = 1.dp)
-                )
-
-                Scaffold(
-                    contentWindowInsets = WindowInsets(0, 0, 0, 0),
-                    snackbarHost = {
-                        SnackbarHost(hostState = shellSnackbarHostState) { data ->
-                            Snackbar(
-                                snackbarData = data,
-                                containerColor = ForestCanopy,
-                                contentColor = PureWhite,
-                                actionColor = GoldAccent
+            },
+            bottomBar = {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(1.dp)
+                            .background(SageOutline)
+                    )
+                    NavigationBar(
+                        containerColor = PureWhite,
+                        contentColor = ForestGreen,
+                        windowInsets = WindowInsets.navigationBars,
+                        modifier = Modifier.testTag("adaptive_navigation_bar")
+                    ) {
+                        AppDestination.entries.forEach { destination ->
+                            val selected = currentDestination == destination
+                            NavigationBarItem(
+                                selected = selected,
+                                onClick = { currentDestination = destination },
+                                icon = {
+                                    Icon(
+                                        imageVector = if (selected) {
+                                            destination.selectedIcon
+                                        } else {
+                                            destination.unselectedIcon
+                                        },
+                                        contentDescription = null // the label below already names the destination for TalkBack
+                                    )
+                                },
+                                label = {
+                                    Text(
+                                        text = stringResource(id = destination.labelResId),
+                                        style = MaterialTheme.typography.labelSmall
+                                    )
+                                },
+                                colors = NavigationBarItemDefaults.colors(
+                                    selectedIconColor = ForestGreen,
+                                    selectedTextColor = ForestGreen,
+                                    indicatorColor = ForestSoftTint,
+                                    unselectedIconColor = MutedSage,
+                                    unselectedTextColor = MutedSage
+                                ),
+                                modifier = Modifier.testTag(destination.testTag)
                             )
                         }
-                    },
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                ) { innerPadding ->
-                    DestinationContentHost(
-                        currentDestination = currentDestination,
-                        workspaceViewModel = workspaceViewModel,
-                        invoicesViewModel = invoicesViewModel,
-                        workspaceState = workspaceState,
-                        invoicesState = invoicesState,
-                        webReloadSignal = webReloadSignal,
-                        applyBottomNavInsetInWorkspace = true,
-                        onNavigateTo = { currentDestination = it },
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(innerPadding)
+                    }
+                }
+            },
+            snackbarHost = {
+                SnackbarHost(hostState = shellSnackbarHostState) { data ->
+                    Snackbar(
+                        snackbarData = data,
+                        containerColor = ForestCanopy,
+                        contentColor = PureWhite,
+                        actionColor = GoldAccent
                     )
                 }
             }
-        } else {
-            Scaffold(
-                contentWindowInsets = WindowInsets(0, 0, 0, 0),
-                snackbarHost = {
-                    SnackbarHost(hostState = shellSnackbarHostState) { data ->
-                        Snackbar(
-                            snackbarData = data,
-                            containerColor = ForestCanopy,
-                            contentColor = PureWhite,
-                            actionColor = GoldAccent
-                        )
-                    }
-                },
-                bottomBar = {
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(1.dp)
-                                .background(SageOutline)
-                        )
-                        NavigationBar(
-                            containerColor = PureWhite,
-                            contentColor = ForestGreen,
-                            windowInsets = WindowInsets.navigationBars,
-                            modifier = Modifier.testTag("adaptive_navigation_bar")
-                        ) {
-                            AppDestination.entries.forEach { destination ->
-                                val selected = currentDestination == destination
-                                NavigationBarItem(
-                                    selected = selected,
-                                    onClick = { currentDestination = destination },
-                                    icon = {
-                                        Icon(
-                                            imageVector = if (selected) {
-                                                destination.selectedIcon
-                                            } else {
-                                                destination.unselectedIcon
-                                            },
-                                            contentDescription = stringResource(id = destination.labelResId)
-                                        )
-                                    },
-                                    label = {
-                                        Text(
-                                            text = stringResource(id = destination.labelResId),
-                                            style = MaterialTheme.typography.labelSmall
-                                        )
-                                    },
-                                    colors = NavigationBarItemDefaults.colors(
-                                        selectedIconColor = ForestGreen,
-                                        selectedTextColor = ForestGreen,
-                                        indicatorColor = ForestSoftTint,
-                                        unselectedIconColor = MutedSage,
-                                        unselectedTextColor = MutedSage
-                                    ),
-                                    modifier = Modifier.testTag(destination.testTag)
-                                )
-                            }
-                        }
-                    }
-                }
-            ) { innerPadding ->
-                DestinationContentHost(
-                    currentDestination = currentDestination,
-                    workspaceViewModel = workspaceViewModel,
-                    invoicesViewModel = invoicesViewModel,
-                    workspaceState = workspaceState,
-                    invoicesState = invoicesState,
-                    webReloadSignal = webReloadSignal,
-                    applyBottomNavInsetInWorkspace = false,
-                    onNavigateTo = { currentDestination = it },
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(innerPadding)
-                )
-            }
+        ) { innerPadding ->
+            DestinationContentHost(
+                currentDestination = currentDestination,
+                workspaceViewModel = workspaceViewModel,
+                invoicesViewModel = invoicesViewModel,
+                workspaceState = workspaceState,
+                invoicesState = invoicesState,
+                webReloadSignal = webReloadSignal,
+                applyBottomNavInsetInWorkspace = useNavigationRail,
+                onNavigateTo = { currentDestination = it },
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+            )
         }
     }
 }
@@ -399,6 +358,8 @@ private fun DestinationContentHost(
             DownloadProgressBanner(
                 visible = workspaceState.isDownloading,
                 statusText = stringResource(id = workspaceState.downloadStatusResId),
+                progress = workspaceState.downloadProgress?.fraction,
+                onCancel = { workspaceViewModel.cancelDownload() },
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .zIndex(3f)

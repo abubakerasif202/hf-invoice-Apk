@@ -188,7 +188,7 @@ fun DocumentReadySheet(
                     shape = MaterialTheme.shapes.medium,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(50.dp)
+                        .heightIn(min = 50.dp)
                         .minimumInteractiveComponentSize()
                         .testTag("sheet_open_pdf_button")
                 ) {
@@ -222,7 +222,7 @@ fun DocumentReadySheet(
                         shape = MaterialTheme.shapes.medium,
                         modifier = Modifier
                             .weight(1f)
-                            .height(48.dp)
+                            .heightIn(min = 48.dp)
                             .minimumInteractiveComponentSize()
                             .testTag("sheet_share_pdf_button")
                     ) {
@@ -248,7 +248,7 @@ fun DocumentReadySheet(
                             shape = MaterialTheme.shapes.medium,
                             modifier = Modifier
                                 .weight(1f)
-                                .height(48.dp)
+                                .heightIn(min = 48.dp)
                                 .minimumInteractiveComponentSize()
                                 .testTag("sheet_print_pdf_button")
                         ) {

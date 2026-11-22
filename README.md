@@ -20,6 +20,14 @@ The app hosts the live invoice website in a hardened WebView inside a branded na
 
 All customer, invoice, payment and GST data stays on the hosted backend. The app has no database of its own, no Firebase/Supabase, and no embedded credentials or API keys.
 
+## Downloads, sessions and navigation
+
+- **Expired session.** If the server answers a PDF/CSV request with 401/403, redirects to a page on the site (the login), or returns an HTML page instead of a document, the app shows **Session Expired — Sign In Again** and opens the login page. Redirects are never followed with the session cookie.
+- **Progress and cancel.** Downloads show a progress ring with a percentage (indeterminate if the server sends no length) and a **Cancel** button that tears the connection down immediately. One download runs at a time; tapping another says so instead of doing nothing.
+- **Clear errors.** Not found, server error, no connection, timeout, too large, invalid PDF, storage failure and blocked redirect each have their own message.
+- **Completion.** A notification (private on the lock screen) offers Open and Share; the in-app sheet offers Open, Share and Print (A4 request via Android's print framework).
+- **Rotation and appearance changes** (rotation, dark mode, language, font size) are handled without recreating the Activity, and the same layout tree is used for portrait (bottom bar) and landscape/tablet (side rail), so the WebView and its page are kept. After process death the last trusted page is restored (re-validated; API routes are never restored).
+
 ## Security notes
 
 - **HTTPS only.** `network_security_config.xml` blocks cleartext traffic; TLS errors are never bypassed.
@@ -29,7 +37,7 @@ All customer, invoice, payment and GST data stays on the hosted backend. The app
 - **Downloaded documents.** PDFs are validated (`%PDF-` header, 25 MB cap), kept in app-private cache for Open/Share/Print via `FileProvider`, and also saved to `Downloads/HF Removals Invoices` using `MediaStore` (Android 10+) or app-scoped storage (Android 7–9).
 - **Notifications** use private lock-screen visibility so invoice filenames are not shown on a locked phone.
 - **Backup.** `allowBackup="false"` plus `data_extraction_rules.xml` exclude all app data from cloud backup and device transfer.
-- **Not implemented:** screenshot blocking (`FLAG_SECURE`). It would also block the owner's own screenshots, so if you want it, add it as an opt-in setting.
+- **Privacy mode (optional, off by default).** *Workspace → gear icon → Settings → Privacy mode* sets `FLAG_SECURE`: screenshots and screen recording are blocked and the app preview is blanked in the recent-apps list. It is off by default so screenshots keep working; the choice is stored on the device only.
 
 ## Development setup (Windows 11 + PowerShell)
 
@@ -134,7 +142,7 @@ Edit `versionCode` (must increase with every release) and `versionName` in `app/
 
 ## GitHub Actions
 
-`.github/workflows/android-apk.yml` runs on pushes to `main`, pull requests and manual dispatch. It runs unit tests, lint and `assembleDebug`, verifies the APK is a valid archive, and uploads it as the artifact **HF-Removals-Invoices-Debug-APK** (kept 14 days). On failure it uploads test and lint reports as **build-diagnostics**.
+`.github/workflows/android-apk.yml` (actions: `checkout@v7`, `setup-java@v6`, `setup-gradle@v6`, `upload-artifact@v7`, `setup-android@v4`) runs on pushes to `main`, pull requests and manual dispatch. It runs unit tests, lint and `assembleDebug`, verifies the APK is a valid archive, and uploads it as the artifact **HF-Removals-Invoices-Debug-APK** (kept 14 days). On failure it uploads test and lint reports as **build-diagnostics**.
 
 To download the APK: GitHub → **Actions** → the run → **Artifacts**.
 
@@ -152,6 +160,19 @@ To download the APK: GitHub → **Actions** → the run → **Artifacts**.
 | PDF does not open | Install a PDF viewer app; the app falls back to a clear error message. Share and Print still work. |
 | "Sign in again" when downloading | The server session expired. Sign in in the Workspace tab and retry. |
 | PDF/CSV saved but not visible | Android 10+: look in `Downloads/HF Removals Invoices`. Android 7–9: app-specific storage (`Android/data/com.hfremovalsadelaide.invoices/files/Download`). |
+
+## Tests
+
+`.\gradlew.bat :app:testDebugUnitTest` runs 52 JVM tests (Robolectric, no emulator needed): trusted-origin policy (lookalike hosts, userinfo, backslashes, traversal, restore-URL validation), the downloader against a scripted fake connection (session expiry, redirects, error mapping, progress, size cap, cookie handling, cancellation), ViewModel download state and events, Privacy mode, the adaptive layout (WebView host survives rotation), manifest configuration, and the invoice API parser.
+
+## Known limitations
+
+- **No instrumented (on-device UI) test suite and no emulator run** is part of CI. Device checks so far were manual, on one Huawei phone (Android 10).
+- **Printing** uses Android's print framework and requests A4; the paper size actually offered depends on the selected printer/print service (one test printer defaulted to Letter).
+- **The website itself is not changed by this app.** Its own header and layout (including in landscape) are what the hosted site renders; the native shell only adds the app bar and navigation.
+- **Download progress is shown in the app, not in the notification shade**, and a download stops if Android kills the app process.
+- **Session expiry detection** relies on the server answering with 401/403, a redirect to the site, or an HTML page; a server that signals expiry some other way would show a generic error.
+- **Signed releases need your own keystore**, which is deliberately not in this repository.
 
 ## Project layout
 
