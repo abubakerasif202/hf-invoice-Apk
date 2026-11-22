@@ -36,7 +36,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '21'
@@ -44,8 +44,8 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
 
-      - name: Install Android 16 platform and build tools
-        run: sdkmanager --install "platforms;android-36" "build-tools;36.0.0"
+      - name: Install Android platform 37 (compile) and 36 (target) plus build tools
+        run: sdkmanager --install "platforms;android-37.0" "platforms;android-36" "build-tools;36.0.0"
 
       - name: Set up Gradle (wrapper-pinned version, cached)
         uses: gradle/actions/setup-gradle@v4

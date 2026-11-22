@@ -26,7 +26,7 @@ fun loadReleaseSigning(): Map<String, String>? {
 
 android {
     namespace = "com.hfremovalsadelaide.invoices"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.hfremovalsadelaide.invoices"

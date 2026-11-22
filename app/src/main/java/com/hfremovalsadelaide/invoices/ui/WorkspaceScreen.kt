@@ -67,6 +67,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -104,6 +105,7 @@ fun WorkspaceScreen(
     applyNavigationBarPadding: Boolean = true
 ) {
     val context = LocalContext.current
+    val resources = LocalResources.current
     val activity = context as? Activity
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -138,7 +140,7 @@ fun WorkspaceScreen(
     val showSnackbar: (Int) -> Unit = { resId ->
         scope.launch {
             snackbarHostState.showSnackbar(
-                message = context.getString(resId),
+                message = resources.getString(resId),
                 duration = SnackbarDuration.Short
             )
         }

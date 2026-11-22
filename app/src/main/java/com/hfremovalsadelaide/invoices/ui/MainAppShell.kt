@@ -46,7 +46,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -105,7 +105,7 @@ fun MainAppShell(
     workspaceViewModel: WorkspaceViewModel = viewModel(),
     invoicesViewModel: InvoicesViewModel = viewModel()
 ) {
-    val context = LocalContext.current
+    val resources = LocalResources.current
     var currentDestination by rememberSaveable { mutableStateOf(AppDestination.WORKSPACE) }
     var webReloadSignal by remember { mutableIntStateOf(0) }
     val shellSnackbarHostState = remember { SnackbarHostState() }
@@ -134,14 +134,14 @@ fun MainAppShell(
                         R.string.create_invoice_success_draft
                     }
                     shellSnackbarHostState.showSnackbar(
-                        message = context.getString(msgId),
+                        message = resources.getString(msgId),
                         duration = SnackbarDuration.Short
                     )
                 }
 
                 InvoicesEvent.RequireSignIn -> {
                     shellSnackbarHostState.showSnackbar(
-                        message = context.getString(R.string.create_invoice_auth_needed),
+                        message = resources.getString(R.string.create_invoice_auth_needed),
                         duration = SnackbarDuration.Short
                     )
                 }
