@@ -1,0 +1,121 @@
+package com.hfremovalsadelaide.invoices.security
+
+import android.net.Uri
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
+class TrustedOriginPolicyTest {
+
+    @Test
+    fun allowsProductionHttpsOrigin() {
+        val uri = Uri.parse("https://hf-invoice-generator.vercel.app/")
+        assertTrue(TrustedOriginPolicy.isTrustedOrigin(uri))
+        assertEquals(
+            TrustedOriginPolicy.NavigationDecision.AllowInWebView,
+            TrustedOriginPolicy.classifyNavigation(uri)
+        )
+    }
+
+    @Test
+    fun blocksCleartextHttpOnProductionHost() {
+        val uri = Uri.parse("http://hf-invoice-generator.vercel.app/")
+        assertFalse(TrustedOriginPolicy.isTrustedOrigin(uri))
+        assertEquals(
+            TrustedOriginPolicy.NavigationDecision.Block,
+            TrustedOriginPolicy.classifyNavigation(uri)
+        )
+    }
+
+    @Test
+    fun blocksDangerousSchemes() {
+        val schemes = listOf(
+            "file:///etc/passwd",
+            "javascript:alert(1)",
+            "content://com.example/data",
+            "intent://scan/#Intent;end"
+        )
+        schemes.forEach { raw ->
+            assertEquals(
+                "Expected $raw to be blocked",
+                TrustedOriginPolicy.NavigationDecision.Block,
+                TrustedOriginPolicy.classifyNavigation(Uri.parse(raw))
+            )
+        }
+    }
+
+    @Test
+    fun routesUnrelatedHttpsLinksExternally() {
+        val uri = Uri.parse("https://www.ato.gov.au/businesses-and-organisations")
+        val decision = TrustedOriginPolicy.classifyNavigation(uri)
+        assertTrue(decision is TrustedOriginPolicy.NavigationDecision.OpenExternally)
+        assertEquals(uri, (decision as TrustedOriginPolicy.NavigationDecision.OpenExternally).uri)
+    }
+
+    @Test
+    fun routesMailtoAndTelExternally() {
+        val mail = Uri.parse("mailto:admin@hfremovalsadelaide.com.au")
+        val tel = Uri.parse("tel:+61400000000")
+        assertTrue(TrustedOriginPolicy.classifyNavigation(mail) is TrustedOriginPolicy.NavigationDecision.OpenExternally)
+        assertTrue(TrustedOriginPolicy.classifyNavigation(tel) is TrustedOriginPolicy.NavigationDecision.OpenExternally)
+    }
+
+    @Test
+    fun classifiesPdfDownloadAndInlinePrintRequests() {
+        val downloadUri = Uri.parse("https://hf-invoice-generator.vercel.app/api/pdf/123e4567-e89b-12d3-a456-426614174000")
+        val printUri = Uri.parse("https://hf-invoice-generator.vercel.app/api/pdf/123e4567-e89b-12d3-a456-426614174000?inline")
+
+        val downloadDecision = TrustedOriginPolicy.classifyNavigation(downloadUri)
+        assertEquals(
+            TrustedOriginPolicy.NavigationDecision.DownloadPdf(downloadUri.toString(), false),
+            downloadDecision
+        )
+
+        val printDecision = TrustedOriginPolicy.classifyNavigation(printUri)
+        assertEquals(
+            TrustedOriginPolicy.NavigationDecision.DownloadPdf(printUri.toString(), true),
+            printDecision
+        )
+    }
+
+    @Test
+    fun classifiesCsvExportRequest() {
+        val exportUri = Uri.parse("https://hf-invoice-generator.vercel.app/api/export")
+        assertEquals(
+            TrustedOriginPolicy.NavigationDecision.DownloadCsv(exportUri.toString()),
+            TrustedOriginPolicy.classifyNavigation(exportUri)
+        )
+    }
+
+    @Test
+    fun extractsAndSanitizesOriginalInvoiceFilenames() {
+        val standard = TrustedOriginPolicy.extractAndSanitizeFilename(
+            contentDisposition = """attachment; filename="HF-Invoice-INV-2026-0042.pdf"""",
+            fallbackName = "fallback.pdf",
+            requiredExtension = ".pdf"
+        )
+        assertEquals("HF-Invoice-INV-2026-0042.pdf", standard)
+
+        val traversal = TrustedOriginPolicy.extractAndSanitizeFilename(
+            contentDisposition = """attachment; filename="../../evil/HF-Invoice-01.pdf"""",
+            fallbackName = "fallback.pdf",
+            requiredExtension = ".pdf"
+        )
+        assertFalse(traversal.contains("/"))
+        assertFalse(traversal.contains("\\"))
+        assertTrue(traversal.endsWith(".pdf"))
+
+        val rfc5987 = TrustedOriginPolicy.extractAndSanitizeFilename(
+            contentDisposition = """inline; filename*=UTF-8''HF-Invoice%20007.pdf""",
+            fallbackName = "fallback.pdf",
+            requiredExtension = ".pdf"
+        )
+        assertEquals("HF-Invoice 007.pdf", rfc5987)
+    }
+}

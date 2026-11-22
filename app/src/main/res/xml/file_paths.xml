@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <cache-path
+        name="invoice_cache"
+        path="invoices/" />
+    <external-files-path
+        name="invoice_downloads"
+        path="Download/" />
+</paths>

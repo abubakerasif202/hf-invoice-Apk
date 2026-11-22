@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">HF Removals Invoices</string>
+    <string name="brand_company_name">HF Removals Adelaide</string>
+    <string name="brand_workspace_subtitle">Private Invoice Workspace</string>
+    <string name="splash_connecting">Connecting securely…</string>
+    <string name="splash_logo_description">HF Removals Adelaide logo</string>
+
+    <string name="nav_back_description">Navigate back</string>
+    <string name="nav_refresh_description">Refresh workspace</string>
+    <string name="nav_downloads_description">View downloaded invoice PDFs</string>
+    <string name="nav_home_description">Return to invoice workspace home</string>
+
+    <string name="error_offline_title">No internet connection</string>
+    <string name="error_offline_message">Unable to reach the HF Removals invoicing server. Check your mobile data or Wi-Fi connection and try again.</string>
+    <string name="error_connection_title">Could not load workspace</string>
+    <string name="error_connection_message">The connection to HF Removals Adelaide was interrupted. Your session and data remain safe on the server.</string>
+    <string name="error_ssl_title">Secure connection blocked</string>
+    <string name="error_ssl_message">The SSL certificate for this connection could not be verified. Access was blocked to protect your private business records.</string>
+    <string name="action_retry">Retry connection</string>
+
+    <string name="download_in_progress">Downloading invoice document…</string>
+    <string name="download_preparing_print">Preparing invoice for printing…</string>
+    <string name="download_complete_title">Invoice PDF ready</string>
+    <string name="download_csv_complete_title">CSV export ready</string>
+    <string name="download_saved_to_downloads">Saved to Downloads / HF Removals Invoices</string>
+    <string name="download_saved_to_app_storage">Saved to app Downloads folder</string>
+    <string name="download_failed_generic">Could not download document. Please try again.</string>
+    <string name="download_failed_auth">Your administrator session has expired. Please sign in again.</string>
+    <string name="download_failed_invalid_pdf">The server did not return a valid PDF document.</string>
+
+    <string name="action_open_pdf">Open PDF</string>
+    <string name="action_open_file">Open File</string>
+    <string name="action_share">Share</string>
+    <string name="action_print">Print A4</string>
+    <string name="action_dismiss">Done</string>
+    <string name="action_confirm">Confirm</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_ok">OK</string>
+
+    <string name="saved_pdfs_title">Saved Invoice Documents</string>
+    <string name="saved_pdfs_subtitle">Documents downloaded on this device</string>
+    <string name="saved_pdfs_empty_title">No downloaded invoices yet</string>
+    <string name="saved_pdfs_empty_message">When you tap Download PDF or Print Invoice on any invoice, it appears here for quick opening, sharing, and A4 printing.</string>
+
+    <string name="share_chooser_title">Share invoice document</string>
+    <string name="error_no_pdf_viewer">No PDF viewer app found. You can still share or print this invoice.</string>
+    <string name="error_no_browser">No browser app found to open this external link.</string>
+    <string name="external_link_opened">Opened external link in system browser</string>
+    <string name="untrusted_link_blocked">Blocked insecure link for your protection</string>
+
+    <string name="notification_channel_name">Invoice Downloads</string>
+    <string name="notification_channel_description">Notifications when invoice PDFs and CSV exports finish downloading</string>
+    <string name="notification_download_complete_title">Download complete</string>
+    <string name="notification_action_open">Open</string>
+    <string name="notification_action_share">Share</string>
+
+    <string name="dialog_js_confirm_title">Confirm action</string>
+    <string name="dialog_js_alert_title">HF Removals Invoices</string>
+    <string name="banner_offline_indicator">Offline — waiting for network</string>
+
+    <!-- Adaptive Navigation Tabs -->
+    <string name="tab_workspace">Workspace</string>
+    <string name="tab_invoices">Invoices</string>
+    <string name="tab_new_invoice">New Invoice</string>
+
+    <!-- Native Invoice List Screen -->
+    <string name="invoices_screen_title">Previous Invoices</string>
+    <string name="invoices_screen_subtitle">Live records from HF Removals Adelaide</string>
+    <string name="invoices_search_placeholder">Search number, customer, or service…</string>
+    <string name="invoices_filter_all">All</string>
+    <string name="invoices_metric_total">Total</string>
+    <string name="invoices_metric_outstanding">Outstanding</string>
+    <string name="invoices_metric_paid">Paid</string>
+    <string name="invoices_issued_prefix">Issued %1$s</string>
+    <string name="invoices_due_prefix">Due %1$s</string>
+    <string name="invoices_empty_title">No invoices match</string>
+    <string name="invoices_empty_message">Create a new invoice or clear your search and status filters to view all records.</string>
+    <string name="invoices_auth_required_title">Administrator sign-in required</string>
+    <string name="invoices_auth_required_message">Private business invoices are protected behind your HF Removals administrator login. Sign in on the Workspace tab to view and create invoices here.</string>
+    <string name="invoices_go_to_sign_in">Sign in on Workspace</string>
+    <string name="invoices_error_title">Could not load invoices</string>
+    <string name="invoices_error_network">Unable to reach the HF Removals server. Check your internet connection and try again.</string>
+    <string name="invoices_error_server">The server returned an unexpected response while loading invoices.</string>
+    <string name="invoices_fab_create">New Invoice</string>
+    <string name="invoices_action_pdf">PDF</string>
+    <string name="invoices_action_print">Print</string>
+    <string name="invoices_clear_search_description">Clear search query</string>
+
+    <!-- Create Invoice Data Entry Form -->
+    <string name="create_invoice_title">Create New Invoice</string>
+    <string name="create_invoice_subtitle">Saves directly to your HF Removals Adelaide ledger</string>
+    <string name="create_invoice_section_customer">Customer Details</string>
+    <string name="create_invoice_section_service">Service &amp; Billing</string>
+    <string name="create_invoice_section_status">Invoice Status</string>
+    <string name="create_invoice_quick_fill_label">Quick-fill existing customer</string>
+    <string name="create_invoice_new_customer_chip">New customer</string>
+    <string name="field_customer_name">Customer name</string>
+    <string name="field_customer_name_hint">e.g. Sarah Mitchell or Adelaide Property Group</string>
+    <string name="field_customer_address">Customer address</string>
+    <string name="field_customer_address_hint">Street address, suburb, SA postcode</string>
+    <string name="field_services_performed">Services performed</string>
+    <string name="field_services_performed_hint">Describe removal work, crew, truck, packing, or extras</string>
+    <string name="field_total_amount">Total amount (AUD)</string>
+    <string name="field_total_amount_hint">0.00</string>
+    <string name="field_issue_date">Issue date</string>
+    <string name="field_due_date">Due date</string>
+    <string name="mode_save_draft">Save as Draft</string>
+    <string name="mode_issue_invoice">Issue Invoice</string>
+    <string name="create_invoice_preview_title">Invoice Summary</string>
+    <string name="create_invoice_submit_draft">Save Draft Invoice</string>
+    <string name="create_invoice_submit_issue">Create &amp; Issue Invoice</string>
+    <string name="create_invoice_submitting">Saving invoice…</string>
+    <string name="create_invoice_reset">Clear form</string>
+    <string name="create_invoice_success_draft">Draft invoice saved to HF Removals</string>
+    <string name="create_invoice_success_issued">Invoice created and issued</string>
+    <string name="create_invoice_auth_needed">Sign in on the Workspace tab first before creating an invoice.</string>
+
+    <!-- Form Validation Errors -->
+    <string name="validation_customer_name_required">Please enter a customer or business name.</string>
+    <string name="validation_customer_address_required">Please enter the customer billing or service address.</string>
+    <string name="validation_services_required">Please describe the services performed.</string>
+    <string name="validation_amount_invalid">Enter a valid amount greater than $0.00.</string>
+</resources>

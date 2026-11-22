@@ -1,0 +1,6 @@
+{
+  "name": "HF Removals Invoices",
+  "description": "Native Android invoicing and customer management application for HF Removals Adelaide.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
