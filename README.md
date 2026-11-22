@@ -1,102 +1,167 @@
-# HF Removals Invoices — Android Application
+# HF Removals Invoices — Android App
 
-Native Android application for **HF Removals Adelaide** built with Kotlin, Jetpack Compose, Material 3, and Android Studio-compatible Gradle (Kotlin DSL).
+Android app for **HF Removals Adelaide**, built with Kotlin, Jetpack Compose and Material 3.
 
-- **App Name:** HF Removals Invoices
-- **Package / Application ID:** `com.hfremovalsadelaide.invoices`
-- **Backend Source of Truth:** `https://hf-invoice-generator.vercel.app`
-- **Minimum Android Version:** Android 7.0 (API 24)
-- **Target / Compile SDK:** Android 16 (API 36)
+| | |
+|---|---|
+| App name | HF Removals Invoices |
+| Application ID | `com.hfremovalsadelaide.invoices` |
+| Backend (source of truth) | `https://hf-invoice-generator.vercel.app` |
+| minSdk / targetSdk | 24 (Android 7.0) / 36 |
+| compileSdk | 37.1 |
+| Toolchain | AGP 9.5.2, Kotlin 2.4.21, Gradle 9.9.2 (via wrapper), JDK 21 |
 
----
+## How it works
 
-## Architecture & Security
+The app hosts the live invoice website in a hardened WebView inside a branded native shell, with three tabs:
 
-This application wraps the live production Next.js invoicing system in a hardened native Android WebView hosted inside a branded Jetpack Compose interface. All customer records, invoices, GST calculations, and payments remain strictly on the existing hosted backend — no duplicate database, no Firebase backend, and no credentials or secrets are stored in the APK.
+- **Workspace** — the live website (login, customers, invoices, payments, settings).
+- **Invoices** and **New Invoice** — native screens that call the same authenticated backend endpoint (`/api/manage`) using the WebView's session. They show only what the server returns.
 
-### Security Controls
-- **HTTPS-Only Policy:** Enforced via `network_security_config.xml` (`cleartextTrafficPermitted="false"`) and `TrustedOriginPolicy`.
-- **Trusted Origin Allowlist:** Only `https://hf-invoice-generator.vercel.app` loads inside the WebView. Unrelated HTTPS links, `mailto:`, and `tel:` links open externally in the Android system browser or dialer; insecure schemes (`http:`, `file:`, `javascript:`, `content:`) are blocked.
-- **Strict SSL Validation:** `onReceivedSslError` always cancels the request and displays a security warning — SSL errors are never ignored.
-- **Hardened WebView:** Safe Browsing enabled, third-party cookies disabled, `allowFileAccess = false`, `allowContentAccess = false`, mixed content disallowed, and no JavaScript bridges (`addJavascriptInterface` is not used).
-- **Authenticated PDF & CSV Downloads:** Session cookies are read in memory from WebView's `CookieManager` only for verified HTTPS requests to the trusted host and are never logged or written to storage. Cloud backup of app data is disabled (`allowBackup="false"`).
-- **Zero-Permission Storage & Uploads:** Uses `MediaStore.Downloads` (Android 10+) and Android's zero-permission Photo Picker (`PickVisualMedia`) for company logo uploads without requesting broad storage permissions.
+All customer, invoice, payment and GST data stays on the hosted backend. The app has no database of its own, no Firebase/Supabase, and no embedded credentials or API keys.
 
-### Native Enhancements
-- Branded splash screen and custom adaptive launcher icon using the official HF Removals Adelaide logo.
-- Forest green (`#073D2F`), gold (`#C69B49`), and white Material 3 interface with bundled `Playfair Display` and `Plus Jakarta Sans` typography.
-- Native pull-to-refresh (active only at the top of the page), Back button history navigation, keyboard-safe `adjustResize` + IME insets, and rotation state preservation.
-- Live network monitoring and branded connection-loss / SSL recovery screen with **Retry**.
-- Native A4 PDF downloading (preserving original invoice filenames like `HF-Invoice-....pdf`), download-complete notifications, native Android **Share** sheet, **Open**, and multi-page **PrintManager** (ISO A4) support, plus a **Saved Invoice Documents** drawer.
+## Security notes
 
----
+- **HTTPS only.** `network_security_config.xml` blocks cleartext traffic; TLS errors are never bypassed.
+- **Strict trusted origin.** Only `https://hf-invoice-generator.vercel.app` loads in the WebView. The check rejects lookalike hosts, userinfo (`user@host`), backslash tricks, non-default ports and `..` in PDF paths (covered by unit tests). Other HTTPS links, `mailto:` and `tel:` open in the system handler; other schemes are blocked.
+- **No JavaScript bridges**, no file/content access, mixed content blocked, Safe Browsing on, third-party cookies off.
+- **Session cookies** are read in memory only, sent only to the trusted host over HTTPS (redirects are not followed), and never logged.
+- **Downloaded documents.** PDFs are validated (`%PDF-` header, 25 MB cap), kept in app-private cache for Open/Share/Print via `FileProvider`, and also saved to `Downloads/HF Removals Invoices` using `MediaStore` (Android 10+) or app-scoped storage (Android 7–9).
+- **Notifications** use private lock-screen visibility so invoice filenames are not shown on a locked phone.
+- **Backup.** `allowBackup="false"` plus `data_extraction_rules.xml` exclude all app data from cloud backup and device transfer.
+- **Not implemented:** screenshot blocking (`FLAG_SECURE`). It would also block the owner's own screenshots, so if you want it, add it as an opt-in setting.
 
-## Exporting & Building in Android Studio
+## Development setup (Windows 11 + PowerShell)
 
-1. Export the project as a ZIP from Google AI Studio (or clone from GitHub).
-2. Extract the ZIP and open the root folder in **Android Studio** (JDK 21 / Android SDK 36).
-3. Wait for Gradle Sync to complete.
-4. Run unit tests:
-   ```bash
-   gradle :app:testDebugUnitTest
+Prerequisites:
+
+1. **JDK 21** (for example Eclipse Temurin 21).
+2. **Android SDK** with platforms 36 and 37.1 and build-tools 36.0.0. Easiest: install Android Studio, then use SDK Manager. From the command line:
+   ```powershell
+   & "$env:ANDROID_HOME\cmdline-tools\latest\bin\sdkmanager.bat" "platforms;android-37.1" "platforms;android-36" "build-tools;36.0.0"
    ```
-5. Build a debug APK:
-   ```bash
-   gradle :app:assembleDebug
+3. Environment variables: `ANDROID_HOME` pointing at the SDK (or a git-ignored `local.properties` containing `sdk.dir=...`), and `JAVA_HOME` pointing at JDK 21.
+
+Clone and open:
+
+```powershell
+git clone https://github.com/abubakerasif202/hf-invoice-Apk.git
+cd hf-invoice-Apk
+```
+
+Open the folder in Android Studio and let Gradle sync. Always use the wrapper (`gradlew.bat`), not a globally installed Gradle, so everyone builds with the same version.
+
+## Build, test, run
+
+```powershell
+# Unit tests (JVM, Robolectric)
+.\gradlew.bat :app:testDebugUnitTest
+
+# Android Lint
+.\gradlew.bat :app:lintDebug
+
+# Debug APK  ->  app\build\outputs\apk\debug\app-debug.apk
+.\gradlew.bat :app:assembleDebug
+
+# Everything CI runs
+.\gradlew.bat :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
+```
+
+Debug builds are signed with the standard Android debug key that Gradle creates automatically in `%USERPROFILE%\.android\debug.keystore`. No keystore is needed in the repository.
+
+> Do not run two Gradle builds at the same time in the same checkout. On Windows this can corrupt intermediate dex files and produce confusing `dexBuilderDebug` errors.
+
+### Install on a phone or emulator
+
+1. On the phone: enable **Developer options** (tap *Build number* 7 times) and **USB debugging**; approve the prompt when connected.
+2. Check the device is listed, then install:
+   ```powershell
+   adb devices
+   adb -s <serial> install -r app\build\outputs\apk\debug\app-debug.apk
    ```
-   Output APK: `app/build/outputs/apk/debug/app-debug.apk`
+3. To use an emulator instead, create a device in Android Studio's Device Manager (API 24–36) and start it; `adb devices` will then list it.
 
----
+Or copy the APK to the phone and open it, allowing *Install unknown apps* for your file manager when asked.
 
-## Generating a Signed Release APK and Android App Bundle (AAB)
+## Signed releases (APK and AAB)
 
-Never commit your release keystore or passwords to Git.
+Never commit a keystore or its passwords. Create a private keystore once and keep a backup outside the repository:
 
-### Option A: Using Android Studio (Recommended)
-1. Open the project in **Android Studio**.
-2. Go to **Build → Generate Signed App Bundle / APK…**
-3. Choose **Android App Bundle** (for Google Play) or **APK** (for direct private installation), then click **Next**.
-4. Under **Key store path**, click **Create new…** (first time) or select your existing `.jks` keystore file:
-   - Store the `.jks` file in a secure backup location outside this repository.
-   - Enter a strong keystore password, key alias (e.g. `hf-removals-release`), key password, and organization details (`HF Removals Adelaide`, `AU`).
-5. Click **Next**, select the **release** build variant, and click **Create**.
-6. Locate the signed outputs:
-   - Signed AAB: `app/release/app-release.aab`
-   - Signed APK: `app/release/app-release.apk`
+```powershell
+& "$env:JAVA_HOME\bin\keytool.exe" -genkeypair -v -keystore "$env:USERPROFILE\hf-removals-release.jks" -keyalg RSA -keysize 2048 -validity 10000 -alias hf-removals-release
+```
 
-### Option B: Command-Line Keystore + Gradle
-1. Generate a private upload keystore once:
-   ```bash
-   keytool -genkeypair -v \
-     -keystore ~/hf-removals-release.jks \
-     -keyalg RSA -keysize 2048 -validity 10000 \
-     -alias hf-removals-release
-   ```
-2. Add a `release` signing config in `app/build.gradle.kts` reading credentials from environment variables (or a git-ignored `keystore.properties` file).
-3. Run:
-   ```bash
-   gradle :app:assembleRelease   # Signed release APK
-   gradle :app:bundleRelease     # Signed release AAB
-   ```
+Provide the signing details either through a git-ignored `keystore.properties` in the project root:
 
----
+```properties
+storeFile=C:/Users/you/hf-removals-release.jks
+storePassword=...
+keyAlias=hf-removals-release
+keyPassword=...
+```
 
-## Installing on a Physical Android Phone
+or through environment variables for the current session:
 
-### Method 1: Direct APK Install (Private Business Distribution)
-1. Transfer the signed `app-release.apk` (or `app-debug.apk` for internal testing) to the Android phone via USB, Google Drive, or email.
-2. Open the **Files** app on the Android phone and tap the `.apk` file.
-3. If prompted with *"For your security, your phone isn't allowed to install unknown apps from this source"*, tap **Settings → Allow from this source**, then return and tap **Install**.
-4. Launch **HF Removals Invoices** from the home screen and sign in using the administrator password.
+```powershell
+$env:HF_RELEASE_STORE_FILE     = "$env:USERPROFILE\hf-removals-release.jks"
+$env:HF_RELEASE_STORE_PASSWORD = "..."
+$env:HF_RELEASE_KEY_ALIAS      = "hf-removals-release"
+$env:HF_RELEASE_KEY_PASSWORD   = "..."
+```
 
-### Method 2: Install via USB with ADB
-1. On the Android phone, enable **Developer options** (*Settings → About phone → tap Build number 7 times*) and turn on **USB debugging**.
-2. Connect the phone to your computer via USB and approve the RSA debugging prompt on the phone.
-3. Run:
-   ```bash
-   adb install -r app/build/outputs/apk/debug/app-debug.apk
-   ```
-   (Or point to your signed `app-release.apk`.)
+Then build:
 
-### Method 3: Private Google Play Distribution (AAB)
-Upload `app-release.aab` to **Google Play Console → Internal testing** (or Managed Google Play for private business devices) to distribute updates automatically with Google Play signing.
+```powershell
+.\gradlew.bat :app:assembleRelease :app:bundleRelease
+```
+
+Outputs:
+
+- Signed APK (direct install): `app\build\outputs\apk\release\app-release.apk`
+- Signed AAB (Google Play): `app\build\outputs\bundle\release\app-release.aab`
+
+Without signing details, `assembleRelease` produces `app-release-unsigned.apk`, which **cannot be installed** and is not distribution-ready. Verify a signed APK with:
+
+```powershell
+& "$env:ANDROID_HOME\build-tools\36.0.0\apksigner.bat" verify --verbose app\build\outputs\apk\release\app-release.apk
+```
+
+Release builds use R8 shrinking and resource shrinking. Keep your keystore: Google Play and in-place updates require the same key every time.
+
+### Updating the version
+
+Edit `versionCode` (must increase with every release) and `versionName` in `app/build.gradle.kts`, then rebuild.
+
+## GitHub Actions
+
+`.github/workflows/android-apk.yml` runs on pushes to `main`, pull requests and manual dispatch. It runs unit tests, lint and `assembleDebug`, verifies the APK is a valid archive, and uploads it as the artifact **HF-Removals-Invoices-Debug-APK** (kept 14 days). On failure it uploads test and lint reports as **build-diagnostics**.
+
+To download the APK: GitHub → **Actions** → the run → **Artifacts**.
+
+## Troubleshooting
+
+| Symptom | Cause / fix |
+|---|---|
+| `Minimum supported Gradle version is ...` | You ran a different Gradle than the wrapper. Use `.\gradlew.bat`. |
+| `requires ... compile against version 37.1 or later` | Install `platforms;android-37.1` with SDK Manager. |
+| `SDK location not found` | Set `ANDROID_HOME` or create `local.properties` with `sdk.dir=C\:\\Users\\you\\AppData\\Local\\Android\\Sdk`. |
+| `Unsupported class file major version` | Wrong JDK. Set `JAVA_HOME` to JDK 21. |
+| `Failed to create MD5 hash ... dexBuilderDebug` | Two builds ran at once, or a stray Java process is holding files. Stop Java processes and rebuild. |
+| `adb: no devices` | Re-plug USB, accept the debugging prompt, check `adb devices`. |
+| Release APK will not install | It is unsigned. Provide signing details (see above). |
+| PDF does not open | Install a PDF viewer app; the app falls back to a clear error message. Share and Print still work. |
+| "Sign in again" when downloading | The server session expired. Sign in in the Workspace tab and retry. |
+| PDF/CSV saved but not visible | Android 10+: look in `Downloads/HF Removals Invoices`. Android 7–9: app-specific storage (`Android/data/com.hfremovalsadelaide.invoices/files/Download`). |
+
+## Project layout
+
+```
+app/src/main/java/com/hfremovalsadelaide/invoices/
+  security/   TrustedOriginPolicy (URL allowlist, filename sanitising)
+  webview/    hardened WebView factory and callbacks
+  pdf/        authenticated downloads, Open/Share/Print, notifications
+  data/       /api/manage client and models
+  network/    connectivity monitor
+  ui/         Compose shell, Workspace, Invoices, New Invoice, theme
+app/src/test/ unit tests (policy, repository, configuration)
+```
