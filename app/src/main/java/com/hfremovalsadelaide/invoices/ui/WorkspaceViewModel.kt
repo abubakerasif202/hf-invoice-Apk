@@ -10,8 +10,13 @@ import com.hfremovalsadelaide.invoices.R
 import com.hfremovalsadelaide.invoices.network.NetworkMonitor
 import com.hfremovalsadelaide.invoices.pdf.AuthenticatedDocumentDownloader
 import com.hfremovalsadelaide.invoices.pdf.DownloadNotificationHelper
+import com.hfremovalsadelaide.invoices.pdf.DocumentDownloader
 import com.hfremovalsadelaide.invoices.pdf.DownloadOutcome
+import com.hfremovalsadelaide.invoices.pdf.DownloadProgress
 import com.hfremovalsadelaide.invoices.pdf.DownloadedDocument
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -54,6 +59,8 @@ data class WorkspaceUiState(
     val errorKind: ConnectionErrorKind = ConnectionErrorKind.NONE,
     val isDownloading: Boolean = false,
     @StringRes val downloadStatusResId: Int = R.string.download_in_progress,
+    /** Null while no download runs, or while the server has not announced a length yet. */
+    val downloadProgress: DownloadProgress? = null,
     val activeDocument: DownloadedDocument? = null,
     val showSavedDocumentsSheet: Boolean = false,
     val savedDocuments: List<DownloadedDocument> = emptyList(),
@@ -65,13 +72,17 @@ sealed interface WorkspaceEvent {
     data class PrintDocument(val document: DownloadedDocument) : WorkspaceEvent
     data class OpenExternalUri(val uri: Uri) : WorkspaceEvent
     data object RequestNotificationPermissionIfNeeded : WorkspaceEvent
-    data object ReloadLoginSession : WorkspaceEvent
+    /** The server session ended; the UI shows "Session Expired — Sign In Again" and the login page. */
+    data object SessionExpired : WorkspaceEvent
 }
 
-class WorkspaceViewModel(application: Application) : AndroidViewModel(application) {
+class WorkspaceViewModel @JvmOverloads constructor(
+    application: Application,
+    private val downloader: DocumentDownloader = AuthenticatedDocumentDownloader(application)
+) : AndroidViewModel(application) {
 
     private val networkMonitor = NetworkMonitor(application)
-    private val downloader = AuthenticatedDocumentDownloader(application)
+    private var downloadJob: Job? = null
 
     private val _uiState = MutableStateFlow(
         WorkspaceUiState(
@@ -242,7 +253,10 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
         contentDispositionHint: String? = null,
         openPrintImmediately: Boolean = false
     ) {
-        if (_uiState.value.isDownloading) return
+        if (_uiState.value.isDownloading) {
+            _events.tryEmit(WorkspaceEvent.ShowMessage(R.string.download_already_running))
+            return
+        }
 
         if (!notificationPermissionPrompted) {
             notificationPermissionPrompted = true
@@ -258,19 +272,24 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
         _uiState.update {
             it.copy(
                 isDownloading = true,
-                downloadStatusResId = statusText
+                downloadStatusResId = statusText,
+                downloadProgress = null
             )
         }
 
-        viewModelScope.launch {
-            when (
-                val outcome = downloader.download(
-                    url = url,
-                    expectedMimeType = expectedMimeType,
-                    contentDispositionHint = contentDispositionHint,
-                    openPrintImmediately = openPrintImmediately
-                )
-            ) {
+        downloadJob = viewModelScope.launch {
+            val outcome = downloader.download(
+                url = url,
+                expectedMimeType = expectedMimeType,
+                contentDispositionHint = contentDispositionHint,
+                openPrintImmediately = openPrintImmediately,
+                onProgress = { progress ->
+                    if (isActive) _uiState.update { it.copy(downloadProgress = progress) }
+                }
+            )
+            // A cancel that raced with completion wins: never surface a result the user cancelled.
+            ensureActive()
+            when (outcome) {
                 is DownloadOutcome.Success -> {
                     val refreshedList = downloader.listCachedDocuments()
                     DownloadNotificationHelper.showDownloadComplete(
@@ -280,6 +299,7 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
                     _uiState.update {
                         it.copy(
                             isDownloading = false,
+                            downloadProgress = null,
                             savedDocuments = refreshedList,
                             activeDocument = if (outcome.openPrintImmediately) null else outcome.document
                         )
@@ -290,17 +310,26 @@ class WorkspaceViewModel(application: Application) : AndroidViewModel(applicatio
                 }
 
                 DownloadOutcome.AuthRequired -> {
-                    _uiState.update { it.copy(isDownloading = false) }
-                    _events.tryEmit(WorkspaceEvent.ShowMessage(R.string.download_failed_auth))
-                    _events.tryEmit(WorkspaceEvent.ReloadLoginSession)
+                    _uiState.update { it.copy(isDownloading = false, downloadProgress = null) }
+                    _events.tryEmit(WorkspaceEvent.SessionExpired)
                 }
 
                 is DownloadOutcome.Failure -> {
-                    _uiState.update { it.copy(isDownloading = false) }
+                    _uiState.update { it.copy(isDownloading = false, downloadProgress = null) }
                     _events.tryEmit(WorkspaceEvent.ShowMessage(outcome.reasonResId))
                 }
             }
         }
+    }
+
+    /** Stops the running download (the socket is torn down) and tells the user it was cancelled. */
+    fun cancelDownload() {
+        val job = downloadJob ?: return
+        if (!_uiState.value.isDownloading) return
+        job.cancel()
+        downloadJob = null
+        _uiState.update { it.copy(isDownloading = false, downloadProgress = null) }
+        _events.tryEmit(WorkspaceEvent.ShowMessage(R.string.download_cancelled))
     }
 
     fun dismissActiveDocument() {

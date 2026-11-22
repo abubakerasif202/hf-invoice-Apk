@@ -28,6 +28,9 @@ interface InvoiceWebViewCallbacks {
     fun onPageStarted(canGoBack: Boolean)
     fun onProgressChanged(progress: Int)
     fun onPageFinished(canGoBack: Boolean)
+
+    /** Reports the URL of the page that just finished loading (for state restoration). */
+    fun onPageUrl(url: String?) = Unit
     fun onScrollAtTopChanged(isAtTop: Boolean)
     fun onMainFrameError(isOfflineHint: Boolean)
     fun onSslErrorBlocked()
@@ -61,7 +64,8 @@ object InvoiceWebViewFactory {
     @SuppressLint("SetJavaScriptEnabled")
     fun create(
         context: Context,
-        callbacks: InvoiceWebViewCallbacks
+        callbacks: InvoiceWebViewCallbacks,
+        initialUrl: String? = null
     ): WebView {
         return WebView(context).apply {
             layoutParams = ViewGroup.LayoutParams(
@@ -92,7 +96,8 @@ object InvoiceWebViewFactory {
             webViewClient = createWebViewClient(callbacks)
             webChromeClient = createWebChromeClient(callbacks)
 
-            loadUrl(TrustedOriginPolicy.PRODUCTION_URL)
+            // A restored URL is re-validated; anything untrusted falls back to the start page.
+            loadUrl(TrustedOriginPolicy.restorableUrl(initialUrl))
         }
     }
 
@@ -168,6 +173,7 @@ object InvoiceWebViewFactory {
             override fun onPageFinished(view: WebView, url: String?) {
                 super.onPageFinished(view, url)
                 CookieManager.getInstance().flush()
+                callbacks.onPageUrl(url)
                 callbacks.onPageFinished(view.canGoBack())
             }
 

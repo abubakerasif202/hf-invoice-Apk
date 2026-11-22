@@ -67,6 +67,20 @@ object TrustedOriginPolicy {
         return PDF_ID_PATH.matches(path) && path != "/api/pdf/.." && path != "/api/pdf/."
     }
 
+    /**
+     * URL to load after the WebView is recreated (for example after the process was killed).
+     * A saved URL is treated as untrusted input: it must pass the same origin check as any
+     * navigation, and API/download routes are never a page to return to.
+     */
+    fun restorableUrl(saved: String?): String {
+        if (saved.isNullOrBlank()) return PRODUCTION_URL
+        val uri = Uri.parse(saved)
+        if (!isTrustedOrigin(uri)) return PRODUCTION_URL
+        val path = uri.encodedPath.orEmpty()
+        if (path == "/api" || path.startsWith("/api/")) return PRODUCTION_URL
+        return saved
+    }
+
     fun isInlinePrintRequest(uri: Uri?): Boolean {
         if (!isPdfDownloadUrl(uri)) return false
         val query = uri?.encodedQuery ?: return false

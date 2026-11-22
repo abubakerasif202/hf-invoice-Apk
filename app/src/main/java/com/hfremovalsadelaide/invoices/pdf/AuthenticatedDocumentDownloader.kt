@@ -17,7 +17,19 @@ import java.net.URL
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import javax.net.ssl.HttpsURLConnection
+import java.io.IOException
+import java.net.ConnectException
+import java.net.NoRouteToHostException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
+import java.util.concurrent.atomic.AtomicReference
+import javax.net.ssl.SSLException
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.launch
 
 /**
  * Downloads authenticated invoice PDFs and CSV exports from the trusted HF Removals origin.
@@ -25,8 +37,10 @@ import javax.net.ssl.HttpsURLConnection
  * to the verified host, and never logged or written to storage.
  */
 class AuthenticatedDocumentDownloader(
-    private val context: Context
-) {
+    private val context: Context,
+    private val connectionFactory: (URL) -> HttpURLConnection = { it.openConnection() as HttpURLConnection },
+    private val cookieProvider: (String) -> String? = { CookieManager.getInstance().getCookie(it) }
+) : DocumentDownloader {
 
     companion object {
         private const val CONNECT_TIMEOUT_MS = 15_000
@@ -38,72 +52,111 @@ class AuthenticatedDocumentDownloader(
         private val PDF_MAGIC_HEADER = byteArrayOf(0x25, 0x50, 0x44, 0x46, 0x2D) // %PDF-
     }
 
-    suspend fun download(
+    override suspend fun download(
         url: String,
         expectedMimeType: String,
-        contentDispositionHint: String? = null,
-        openPrintImmediately: Boolean = false
-    ): DownloadOutcome = withContext(Dispatchers.IO) {
+        contentDispositionHint: String?,
+        openPrintImmediately: Boolean,
+        onProgress: (DownloadProgress) -> Unit
+    ): DownloadOutcome = coroutineScope {
+        // Blocking socket reads do not respond to coroutine cancellation by themselves. This
+        // watcher disconnects the connection the moment the caller cancels, which unblocks the
+        // read immediately instead of waiting for the read timeout.
+        val activeConnection = AtomicReference<HttpURLConnection?>(null)
+        val watcher = launch(Dispatchers.IO) {
+            try {
+                awaitCancellation()
+            } finally {
+                activeConnection.get()?.disconnect()
+            }
+        }
+        try {
+            withContext(Dispatchers.IO) {
+                fetch(url, expectedMimeType, contentDispositionHint, openPrintImmediately, onProgress, activeConnection)
+            }
+        } finally {
+            watcher.cancel()
+        }
+    }
+
+    private suspend fun fetch(
+        url: String,
+        expectedMimeType: String,
+        contentDispositionHint: String?,
+        openPrintImmediately: Boolean,
+        onProgress: (DownloadProgress) -> Unit,
+        activeConnection: AtomicReference<HttpURLConnection?>
+    ): DownloadOutcome {
         if (!TrustedOriginPolicy.isTrustedOrigin(url)) {
-            return@withContext DownloadOutcome.Failure(R.string.untrusted_link_blocked)
+            return DownloadOutcome.Failure(R.string.untrusted_link_blocked)
         }
 
         val isPdfExpected = expectedMimeType.equals("application/pdf", ignoreCase = true) ||
             TrustedOriginPolicy.isPdfDownloadUrl(android.net.Uri.parse(url))
 
-        var connection: HttpsURLConnection? = null
+        var connection: HttpURLConnection? = null
         try {
-            val parsedUrl = URL(url)
-            val rawConn = parsedUrl.openConnection()
-            if (rawConn !is HttpsURLConnection) {
-                return@withContext DownloadOutcome.Failure(R.string.untrusted_link_blocked)
-            }
-            connection = rawConn.apply {
+            val requestUrl = url
+            connection = connectionFactory(URL(requestUrl)).apply {
                 requestMethod = "GET"
                 connectTimeout = CONNECT_TIMEOUT_MS
                 readTimeout = READ_TIMEOUT_MS
                 instanceFollowRedirects = false
                 useCaches = false
                 setRequestProperty("Accept", if (isPdfExpected) "application/pdf" else "*/*")
-                val sessionCookie = CookieManager.getInstance().getCookie(url)
+                val sessionCookie = cookieProvider(requestUrl)
                 if (!sessionCookie.isNullOrBlank()) {
                     setRequestProperty("Cookie", sessionCookie)
                 }
             }
+            activeConnection.set(connection)
+            currentCoroutineContext().ensureActive()
 
             val statusCode = connection.responseCode
-            if (statusCode == HttpURLConnection.HTTP_UNAUTHORIZED ||
-                statusCode == HttpURLConnection.HTTP_FORBIDDEN
+            when (
+                val verdict = DownloadResponsePolicy.classify(
+                    requestUrl = requestUrl,
+                    status = statusCode,
+                    location = connection.getHeaderField("Location"),
+                    contentType = connection.contentType
+                )
             ) {
-                return@withContext DownloadOutcome.AuthRequired
+                DownloadResponsePolicy.Verdict.SessionExpired -> return DownloadOutcome.AuthRequired
+                is DownloadResponsePolicy.Verdict.Failed -> return DownloadOutcome.Failure(verdict.reasonResId)
+                DownloadResponsePolicy.Verdict.Proceed -> Unit
             }
 
-            if (statusCode !in 200..299) {
-                return@withContext DownloadOutcome.Failure(R.string.download_failed_generic)
+            val announced = connection.contentLengthLong.takeIf { it >= 0 }
+            if (announced != null && announced > MAX_DOCUMENT_BYTES) {
+                return DownloadOutcome.Failure(R.string.download_failed_too_large)
             }
 
+            onProgress(DownloadProgress(0L, announced))
             val responseBytes = connection.inputStream.use { input ->
                 val buffer = ByteArray(8192)
-                val out = ByteArrayOutputStream()
-                var total = 0
+                val out = ByteArrayOutputStream(announced?.toInt() ?: 32 * 1024)
+                var total = 0L
                 while (true) {
+                    currentCoroutineContext().ensureActive()
                     val read = input.read(buffer)
                     if (read == -1) break
                     total += read
                     if (total > MAX_DOCUMENT_BYTES) {
-                        return@withContext DownloadOutcome.Failure(R.string.download_failed_generic)
+                        return DownloadOutcome.Failure(R.string.download_failed_too_large)
                     }
                     out.write(buffer, 0, read)
+                    onProgress(DownloadProgress(total, announced))
                 }
                 out.toByteArray()
             }
+            currentCoroutineContext().ensureActive()
 
             if (responseBytes.isEmpty()) {
-                return@withContext DownloadOutcome.Failure(R.string.download_failed_generic)
+                return DownloadOutcome.Failure(R.string.download_failed_generic)
             }
 
             if (isPdfExpected && !hasPdfMagicHeader(responseBytes)) {
-                return@withContext DownloadOutcome.Failure(R.string.download_failed_invalid_pdf)
+                return DownloadOutcome.Failure(R.string.download_failed_invalid_pdf)
             }
 
             val headerDisposition = connection.getHeaderField("Content-Disposition")
@@ -127,12 +180,16 @@ class AuthenticatedDocumentDownloader(
                 requiredExtension = requiredExt
             )
 
-            val localFile = writePrivateShareCopy(sanitizedName, responseBytes)
+            val localFile = try {
+                writePrivateShareCopy(sanitizedName, responseBytes)
+            } catch (_: IOException) {
+                return DownloadOutcome.Failure(R.string.download_failed_storage)
+            }
             val savedPublic = saveToDownloads(sanitizedName, resolvedMime, responseBytes)
 
             pruneOldCacheFiles()
 
-            DownloadOutcome.Success(
+            return DownloadOutcome.Success(
                 document = DownloadedDocument(
                     fileName = sanitizedName,
                     mimeType = resolvedMime,
@@ -142,14 +199,25 @@ class AuthenticatedDocumentDownloader(
                 ),
                 openPrintImmediately = openPrintImmediately
             )
-        } catch (_: Exception) {
-            DownloadOutcome.Failure(R.string.download_failed_generic)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // A cancel tears the socket down on purpose; report it as cancellation, not an error.
+            currentCoroutineContext().ensureActive()
+            return DownloadOutcome.Failure(networkFailureMessage(e))
         } finally {
             connection?.disconnect()
         }
     }
 
-    fun listCachedDocuments(): List<DownloadedDocument> {
+    private fun networkFailureMessage(error: Exception): Int = when (error) {
+        is SocketTimeoutException -> R.string.download_failed_timeout
+        is UnknownHostException, is ConnectException, is NoRouteToHostException,
+        is SSLException -> R.string.download_failed_network
+        else -> R.string.download_failed_generic
+    }
+
+    override fun listCachedDocuments(): List<DownloadedDocument> {
         val cacheDir = File(context.cacheDir, CACHE_DIR_NAME)
         if (!cacheDir.exists()) return emptyList()
         return cacheDir.listFiles()

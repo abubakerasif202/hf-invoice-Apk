@@ -166,4 +166,24 @@ class TrustedOriginPolicyTest {
         )
         assertEquals("HF-Invoice 007.pdf", rfc5987)
     }
-}
+
+    @Test
+    fun restoredUrlIsRevalidatedAndFallsBackToTheStartPage() {
+        val start = TrustedOriginPolicy.PRODUCTION_URL
+        assertEquals(start, TrustedOriginPolicy.restorableUrl(null))
+        assertEquals(start, TrustedOriginPolicy.restorableUrl(""))
+        assertEquals(start, TrustedOriginPolicy.restorableUrl("http://hf-invoice-generator.vercel.app/dashboard"))
+        assertEquals(start, TrustedOriginPolicy.restorableUrl("https://evil.example/dashboard"))
+        assertEquals(start, TrustedOriginPolicy.restorableUrl("https://hf-invoice-generator.vercel.app.evil.com/"))
+        assertEquals(start, TrustedOriginPolicy.restorableUrl("javascript:alert(1)"))
+        // API/download routes are never a page to come back to.
+        assertEquals(start, TrustedOriginPolicy.restorableUrl("https://hf-invoice-generator.vercel.app/api/pdf/abc"))
+        assertEquals(start, TrustedOriginPolicy.restorableUrl("https://hf-invoice-generator.vercel.app/api/export"))
+        assertEquals(start, TrustedOriginPolicy.restorableUrl("https://hf-invoice-generator.vercel.app/api/manage"))
+    }
+
+    @Test
+    fun restoredUrlKeepsATrustedPageTheUserWasOn() {
+        val page = "https://hf-invoice-generator.vercel.app/customers/42?tab=invoices"
+        assertEquals(page, TrustedOriginPolicy.restorableUrl(page))
+    }}

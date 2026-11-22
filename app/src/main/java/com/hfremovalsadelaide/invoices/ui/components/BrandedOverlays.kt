@@ -31,6 +31,11 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
@@ -309,6 +314,8 @@ fun ConnectionErrorScreen(
 fun DownloadProgressBanner(
     visible: Boolean,
     statusText: String,
+    progress: Float? = null,
+    onCancel: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     AnimatedVisibility(
@@ -326,22 +333,53 @@ fun DownloadProgressBanner(
                 .padding(horizontal = 20.dp, vertical = 16.dp)
                 .testTag("download_progress_banner")
         ) {
+            val percentLabel = progress?.let {
+                stringResource(id = R.string.download_progress_percent, (it * 100).toInt())
+            }
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp)
+                modifier = Modifier
+                    .padding(start = 18.dp, end = if (onCancel != null) 6.dp else 18.dp)
+                    .padding(vertical = 4.dp)
+                    .semantics(mergeDescendants = true) {
+                        liveRegion = LiveRegionMode.Polite
+                        contentDescription = listOfNotNull(statusText, percentLabel).joinToString(", ")
+                    }
             ) {
-                CircularProgressIndicator(
-                    color = GoldAccent,
-                    trackColor = PureWhite.copy(alpha = 0.2f),
-                    strokeWidth = 2.5.dp,
-                    modifier = Modifier.size(18.dp)
-                )
+                if (progress != null) {
+                    CircularProgressIndicator(
+                        progress = { progress },
+                        color = GoldAccent,
+                        trackColor = PureWhite.copy(alpha = 0.2f),
+                        strokeWidth = 2.5.dp,
+                        modifier = Modifier.size(20.dp)
+                    )
+                } else {
+                    CircularProgressIndicator(
+                        color = GoldAccent,
+                        trackColor = PureWhite.copy(alpha = 0.2f),
+                        strokeWidth = 2.5.dp,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
                 Text(
-                    text = statusText,
+                    text = if (percentLabel != null) "$statusText  $percentLabel" else statusText,
                     style = MaterialTheme.typography.labelLarge,
-                    color = PureWhite
+                    color = PureWhite,
+                    modifier = Modifier.weight(1f, fill = false)
                 )
+                if (onCancel != null) {
+                    TextButton(
+                        onClick = onCancel,
+                        colors = ButtonDefaults.textButtonColors(contentColor = GoldAccent),
+                        modifier = Modifier
+                            .minimumInteractiveComponentSize()
+                            .testTag("download_cancel_button")
+                    ) {
+                        Text(stringResource(id = R.string.download_cancel_action))
+                    }
+                }
             }
         }
     }

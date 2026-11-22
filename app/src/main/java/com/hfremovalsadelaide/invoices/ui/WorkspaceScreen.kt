@@ -41,6 +41,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.runtime.saveable.rememberSaveable
+import com.hfremovalsadelaide.invoices.BuildConfig
+import com.hfremovalsadelaide.invoices.settings.AppSettings
+import com.hfremovalsadelaide.invoices.ui.components.SettingsSheet
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Icon
@@ -52,6 +57,7 @@ import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
@@ -110,6 +116,11 @@ fun WorkspaceScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    val appSettings = remember { AppSettings.get(context) }
+    val privacyModeEnabled by appSettings.privacyMode.collectAsStateWithLifecycle()
+    var showSettingsSheet by rememberSaveable { mutableStateOf(false) }
+    // Survives Activity recreation and process death so the user returns to the page they were on.
+    val lastPageUrl = rememberSaveable { mutableStateOf<String?>(null) }
 
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
     var pendingFileCallback by remember { mutableStateOf<ValueCallback<Array<Uri>>?>(null) }
@@ -182,8 +193,17 @@ fun WorkspaceScreen(
                         notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                     }
                 }
-                WorkspaceEvent.ReloadLoginSession -> {
+                WorkspaceEvent.SessionExpired -> {
+                    // Take the user straight to the login page, and say why.
                     webViewRef?.loadUrl(TrustedOriginPolicy.PRODUCTION_URL)
+                    val result = snackbarHostState.showSnackbar(
+                        message = resources.getString(R.string.download_failed_auth),
+                        actionLabel = resources.getString(R.string.session_expired_action),
+                        duration = SnackbarDuration.Long
+                    )
+                    if (result == SnackbarResult.ActionPerformed) {
+                        webViewRef?.loadUrl(TrustedOriginPolicy.PRODUCTION_URL)
+                    }
                 }
             }
         }
@@ -232,6 +252,10 @@ fun WorkspaceScreen(
 
             override fun onPageFinished(canGoBack: Boolean) {
                 viewModel.onPageFinished(canGoBack)
+            }
+
+            override fun onPageUrl(url: String?) {
+                if (TrustedOriginPolicy.restorableUrl(url) == url) lastPageUrl.value = url
             }
 
             override fun onScrollAtTopChanged(isAtTop: Boolean) {
@@ -339,6 +363,7 @@ fun WorkspaceScreen(
                     savedDocumentsCount = uiState.savedDocuments.size,
                     onBackClick = { webViewRef?.goBack() },
                     onSavedDocumentsClick = { viewModel.openSavedDocumentsSheet() },
+                    onSettingsClick = { showSettingsSheet = true },
                     onRefreshClick = {
                         viewModel.onStartRefresh()
                         val view = webViewRef
@@ -387,7 +412,7 @@ fun WorkspaceScreen(
                             .fillMaxSize()
                             .testTag("invoice_webview_container"),
                         factory = { ctx ->
-                            val webView = InvoiceWebViewFactory.create(ctx, webCallbacks)
+                            val webView = InvoiceWebViewFactory.create(ctx, webCallbacks, lastPageUrl.value)
                             webViewRef = webView
 
                             SwipeRefreshLayout(ctx).apply {
@@ -440,6 +465,8 @@ fun WorkspaceScreen(
                     DownloadProgressBanner(
                         visible = uiState.isDownloading,
                         statusText = stringResource(id = uiState.downloadStatusResId),
+                        progress = uiState.downloadProgress?.fraction,
+                        onCancel = { viewModel.cancelDownload() },
                         modifier = Modifier.align(Alignment.BottomCenter)
                     )
                 }
@@ -491,6 +518,15 @@ fun WorkspaceScreen(
         )
     }
 
+    if (showSettingsSheet) {
+        SettingsSheet(
+            privacyModeEnabled = privacyModeEnabled,
+            onPrivacyModeChange = { appSettings.setPrivacyMode(it) },
+            versionName = BuildConfig.VERSION_NAME,
+            onDismiss = { showSettingsSheet = false }
+        )
+    }
+
     JsDialogHost(
         request = uiState.pendingJsDialog,
         onDismiss = { confirmed -> viewModel.dismissJsDialog(confirmed) }
@@ -505,6 +541,7 @@ private fun WorkspaceTopBar(
     savedDocumentsCount: Int,
     onBackClick: () -> Unit,
     onSavedDocumentsClick: () -> Unit,
+    onSettingsClick: () -> Unit,
     onRefreshClick: () -> Unit
 ) {
     Surface(
@@ -569,7 +606,9 @@ private fun WorkspaceTopBar(
                         modifier = Modifier.weight(1f)
                     ) {
                         Text(
-                            text = stringResource(id = R.string.app_name),
+                            text = stringResource(
+                                id = if (isWideScreen) R.string.app_name else R.string.app_name_short
+                            ),
                             style = MaterialTheme.typography.titleMedium,
                             color = PureWhite,
                             maxLines = 1,
@@ -613,6 +652,19 @@ private fun WorkspaceTopBar(
                                 tint = PureWhite
                             )
                         }
+                    }
+
+                    IconButton(
+                        onClick = onSettingsClick,
+                        modifier = Modifier
+                            .minimumInteractiveComponentSize()
+                            .testTag("settings_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Settings,
+                            contentDescription = stringResource(id = R.string.nav_settings_description),
+                            tint = PureWhite
+                        )
                     }
 
                     IconButton(

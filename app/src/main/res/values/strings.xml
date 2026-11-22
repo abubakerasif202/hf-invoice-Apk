@@ -6,6 +6,13 @@
     <string name="splash_connecting">Connecting securely…</string>
     <string name="splash_logo_description">HF Removals Adelaide logo</string>
 
+    <string name="app_name_short">HF Invoices</string>
+    <string name="nav_settings_description">Open settings</string>
+    <string name="settings_title">Settings</string>
+    <string name="settings_subtitle">Preferences for this device only</string>
+    <string name="settings_privacy_title">Privacy mode</string>
+    <string name="settings_privacy_description">Blocks screenshots and screen recording, and hides the app in the recent-apps list. Off by default.</string>
+    <string name="settings_version_label">Version %1$s</string>
     <string name="nav_back_description">Navigate back</string>
     <string name="nav_refresh_description">Refresh workspace</string>
     <string name="nav_downloads_description">View downloaded invoice PDFs</string>
@@ -26,7 +33,19 @@
     <string name="download_saved_to_downloads">Saved to Downloads / HF Removals Invoices</string>
     <string name="download_saved_to_app_storage">Saved to app Downloads folder</string>
     <string name="download_failed_generic">Could not download document. Please try again.</string>
-    <string name="download_failed_auth">Your administrator session has expired. Please sign in again.</string>
+    <string name="download_failed_auth">Session Expired — Sign In Again</string>
+    <string name="session_expired_action">Sign in</string>
+    <string name="download_failed_not_found">That document no longer exists on the server.</string>
+    <string name="download_failed_server">The invoice server had a problem. Please try again shortly.</string>
+    <string name="download_failed_network">No connection. Check your internet and try again.</string>
+    <string name="download_failed_timeout">The server took too long to respond. Please try again.</string>
+    <string name="download_failed_too_large">That document is too large to download safely.</string>
+    <string name="download_failed_storage">Could not save the document on this device.</string>
+    <string name="download_failed_redirect">The server redirected the download to an untrusted address, so it was blocked.</string>
+    <string name="download_already_running">A download is already in progress.</string>
+    <string name="download_cancelled">Download cancelled.</string>
+    <string name="download_cancel_action">Cancel</string>
+    <string name="download_progress_percent">%1$d%%</string>
     <string name="download_failed_invalid_pdf">The server did not return a valid PDF document.</string>
 
     <string name="action_open_pdf">Open PDF</string>

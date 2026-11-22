@@ -9,6 +9,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import com.hfremovalsadelaide.invoices.pdf.DownloadNotificationHelper
+import com.hfremovalsadelaide.invoices.settings.AppSettings
+import com.hfremovalsadelaide.invoices.settings.PrivacyWindowBinder
 import com.hfremovalsadelaide.invoices.ui.MainAppShell
 import com.hfremovalsadelaide.invoices.ui.theme.HFRemovalsTheme
 
@@ -27,6 +29,9 @@ class MainActivity : ComponentActivity() {
         )
 
         DownloadNotificationHelper.ensureChannel(this)
+
+        // Optional Privacy Mode (off by default): FLAG_SECURE blocks screenshots/recording.
+        PrivacyWindowBinder.bind(this, AppSettings.get(this))
 
         setContent {
             HFRemovalsTheme {
