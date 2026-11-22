@@ -1,6 +1,27 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+}
+
+fun loadReleaseSigning(): Map<String, String>? {
+    val fromFile = rootProject.file("keystore.properties")
+        .takeIf { it.exists() }
+        ?.let { file -> Properties().also { props -> file.inputStream().use { props.load(it) } } }
+    fun value(prop: String, env: String): String? =
+        fromFile?.getProperty(prop) ?: System.getenv(env)
+    val store = value("storeFile", "HF_RELEASE_STORE_FILE")
+    val storePass = value("storePassword", "HF_RELEASE_STORE_PASSWORD")
+    val alias = value("keyAlias", "HF_RELEASE_KEY_ALIAS")
+    val keyPass = value("keyPassword", "HF_RELEASE_KEY_PASSWORD")
+    if (store == null || storePass == null || alias == null || keyPass == null) return null
+    return mapOf(
+        "storeFile" to store,
+        "storePassword" to storePass,
+        "keyAlias" to alias,
+        "keyPassword" to keyPass,
+    )
 }
 
 android {
@@ -20,20 +41,29 @@ android {
         }
     }
 
-    signingConfigs {
-        create("debugConfig") {
-            storeFile = file("${rootDir}/debug.keystore")
-            storePassword = "android"
-            keyAlias = "androiddebugkey"
-            keyPassword = "android"
+    // Release signing is read from a git-ignored keystore.properties file or from
+    // HF_RELEASE_* environment variables. Debug builds use the standard Android debug key
+    // that the Android Gradle Plugin generates automatically (~/.android/debug.keystore).
+    val releaseSigning = loadReleaseSigning()
+    if (releaseSigning != null) {
+        signingConfigs {
+            create("release") {
+                storeFile = file(releaseSigning.getValue("storeFile"))
+                storePassword = releaseSigning.getValue("storePassword")
+                keyAlias = releaseSigning.getValue("keyAlias")
+                keyPassword = releaseSigning.getValue("keyPassword")
+            }
         }
     }
 
     buildTypes {
         debug {
-            signingConfig = signingConfigs.getByName("debugConfig")
+            applicationIdSuffix = ""
         }
         release {
+            if (releaseSigning != null) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
