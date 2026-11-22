@@ -95,10 +95,21 @@ object DownloadNotificationHelper {
                 sharePendingIntent
             )
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
             .build()
 
-        runCatching {
-            NotificationManagerCompat.from(context).notify(requestCode, notification)
+        val manager = NotificationManagerCompat.from(context)
+        if (!manager.areNotificationsEnabled()) return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            return
+        }
+        try {
+            manager.notify(requestCode, notification)
+        } catch (_: SecurityException) {
+            // Permission revoked between the check and the call; the download itself succeeded.
         }
     }
 }
