@@ -51,6 +51,54 @@ class TrustedOriginPolicyTest {
     }
 
     @Test
+    fun rejectsLookalikeHostsAndParserDifferentials() {
+        val hostile = listOf(
+            "https://hf-invoice-generator.vercel.app.evil.com/",
+            "https://evilhf-invoice-generator.vercel.app/",
+            "https://hf-invoice-generator.vercel.app@evil.com/",
+            "https://user:pw@hf-invoice-generator.vercel.app/",
+            "https://evil.com\\@hf-invoice-generator.vercel.app/",
+            "https://evil.com\\.hf-invoice-generator.vercel.app/",
+            "https://hf-invoice-generator.vercel.app:8443/",
+            "https://hf-invoice-generator.vercel.app\t.evil.com/",
+            "HTTPS://HF-INVOICE-GENERATOR.VERCEL.APP.evil.com/"
+        )
+        hostile.forEach { raw ->
+            assertFalse("Expected $raw untrusted", TrustedOriginPolicy.isTrustedOrigin(raw))
+            assertFalse(
+                "Expected $raw untrusted as Uri",
+                TrustedOriginPolicy.isTrustedOrigin(Uri.parse(raw))
+            )
+            assertFalse(
+                "Expected $raw never to load in the WebView",
+                TrustedOriginPolicy.classifyNavigation(Uri.parse(raw)) ==
+                    TrustedOriginPolicy.NavigationDecision.AllowInWebView
+            )
+        }
+    }
+
+    @Test
+    fun acceptsCaseInsensitiveHostAndExplicitDefaultPort() {
+        assertTrue(TrustedOriginPolicy.isTrustedOrigin("HTTPS://HF-Invoice-Generator.Vercel.App/dashboard"))
+        assertTrue(TrustedOriginPolicy.isTrustedOrigin("https://hf-invoice-generator.vercel.app:443/dashboard"))
+    }
+
+    @Test
+    fun pdfRouteRejectsTraversalAndNestedPaths() {
+        listOf(
+            "https://hf-invoice-generator.vercel.app/api/pdf/",
+            "https://hf-invoice-generator.vercel.app/api/pdf/../admin",
+            "https://hf-invoice-generator.vercel.app/api/pdf/%2e%2e/admin",
+            "https://hf-invoice-generator.vercel.app/api/pdfx/123"
+        ).forEach { raw ->
+            assertFalse(
+                "Expected $raw not to be a PDF download",
+                TrustedOriginPolicy.isPdfDownloadUrl(Uri.parse(raw))
+            )
+        }
+    }
+
+    @Test
     fun routesUnrelatedHttpsLinksExternally() {
         val uri = Uri.parse("https://www.ato.gov.au/businesses-and-organisations")
         val decision = TrustedOriginPolicy.classifyNavigation(uri)

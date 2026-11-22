@@ -32,14 +32,28 @@ object TrustedOriginPolicy {
         data object Block : NavigationDecision
     }
 
+    private val PDF_ID_PATH = Regex("^/api/pdf/[A-Za-z0-9_~-][A-Za-z0-9._~-]*$")
+
+    /**
+     * android.net.Uri and Chromium parse some malformed authorities differently
+     * (e.g. `https://evil.com\@trusted.host/`). Rather than trust either parser on such input,
+     * reject any authority carrying userinfo, backslashes, whitespace or control characters.
+     */
+    private fun hasAmbiguousAuthority(uri: Uri): Boolean {
+        val raw = uri.toString()
+        if (raw.any { it == '\\' || it.isWhitespace() || it.isISOControl() }) return true
+        val authority = uri.encodedAuthority ?: return true
+        return authority.contains('@')
+    }
+
     fun isTrustedOrigin(uri: Uri?): Boolean {
         if (uri == null) return false
         val scheme = uri.scheme?.lowercase() ?: return false
+        if (scheme != "https") return false
+        if (hasAmbiguousAuthority(uri)) return false
         val host = uri.host?.lowercase() ?: return false
         val port = uri.port
-        return scheme == "https" &&
-            host == PRODUCTION_HOST &&
-            (port == -1 || port == 443)
+        return host == PRODUCTION_HOST && (port == -1 || port == 443)
     }
 
     fun isTrustedOrigin(url: String?): Boolean {
@@ -49,8 +63,8 @@ object TrustedOriginPolicy {
 
     fun isPdfDownloadUrl(uri: Uri?): Boolean {
         if (!isTrustedOrigin(uri)) return false
-        val path = uri?.path ?: return false
-        return path.startsWith("/api/pdf/") && path.length > "/api/pdf/".length
+        val path = uri?.encodedPath ?: return false
+        return PDF_ID_PATH.matches(path) && path != "/api/pdf/.." && path != "/api/pdf/."
     }
 
     fun isInlinePrintRequest(uri: Uri?): Boolean {
