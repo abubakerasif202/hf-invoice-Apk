@@ -77,6 +77,7 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        isCoreLibraryDesugaringEnabled = true // java.time on Android 7 (minSdk 24)
     }
 
     buildFeatures {
@@ -113,6 +114,8 @@ dependencies {
     implementation(libs.androidx.webkit)
     implementation(libs.androidx.swiperefreshlayout)
     implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.androidx.work.runtime.ktx)
+    coreLibraryDesugaring(libs.desugar.jdk.libs)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)

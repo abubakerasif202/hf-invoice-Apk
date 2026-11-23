@@ -57,6 +57,17 @@ import com.hfremovalsadelaide.invoices.R
 import com.hfremovalsadelaide.invoices.security.TrustedOriginPolicy
 import com.hfremovalsadelaide.invoices.ui.components.DownloadProgressBanner
 import com.hfremovalsadelaide.invoices.ui.invoices.CreateInvoiceScreen
+import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.outlined.CalendarMonth
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
+import com.hfremovalsadelaide.invoices.jobs.JobsApi
+import com.hfremovalsadelaide.invoices.jobs.JobsBackground
+import com.hfremovalsadelaide.invoices.jobs.JobsViewModel
+import com.hfremovalsadelaide.invoices.ui.jobs.JobDetailScreen
+import com.hfremovalsadelaide.invoices.ui.jobs.JobNotificationSheet
+import com.hfremovalsadelaide.invoices.ui.jobs.JobsScreen
+import com.hfremovalsadelaide.invoices.ui.jobs.SignOffScreen
 import com.hfremovalsadelaide.invoices.ui.invoices.InvoiceListScreen
 import com.hfremovalsadelaide.invoices.ui.invoices.InvoicesEvent
 import com.hfremovalsadelaide.invoices.ui.invoices.InvoicesLoadState
@@ -92,6 +103,12 @@ enum class AppDestination(
         selectedIcon = Icons.Filled.AddCircle,
         unselectedIcon = Icons.Outlined.AddCircleOutline,
         testTag = "nav_tab_new_invoice"
+    ),
+    JOBS(
+        labelResId = R.string.tab_jobs,
+        selectedIcon = Icons.Filled.CalendarMonth,
+        unselectedIcon = Icons.Outlined.CalendarMonth,
+        testTag = "nav_tab_jobs"
     )
 }
 
@@ -103,9 +120,24 @@ enum class AppDestination(
 @Composable
 fun MainAppShell(
     workspaceViewModel: WorkspaceViewModel = viewModel(),
-    invoicesViewModel: InvoicesViewModel = viewModel()
+    invoicesViewModel: InvoicesViewModel = viewModel(),
+    initialJobId: String? = null,
+    onJobIntentConsumed: () -> Unit = {}
 ) {
     val resources = LocalResources.current
+    val appContext = androidx.compose.ui.platform.LocalContext.current.applicationContext
+    val jobsViewModel: JobsViewModel = viewModel(
+        factory = viewModelFactory {
+            initializer {
+                JobsViewModel(
+                    JobsApi,
+                    onSnapshot = { JobsBackground.onSnapshot(appContext, it) },
+                    onPreferences = { JobsBackground.saveEnabled(appContext, it) }
+                )
+            }
+        }
+    )
+    val jobsState by jobsViewModel.state.collectAsStateWithLifecycle()
     var currentDestination by rememberSaveable { mutableStateOf(AppDestination.WORKSPACE) }
     var webReloadSignal by remember { mutableIntStateOf(0) }
     val shellSnackbarHostState = remember { SnackbarHostState() }
@@ -119,6 +151,30 @@ fun MainAppShell(
                 invoicesState.loadState !is InvoicesLoadState.Loaded)
         ) {
             invoicesViewModel.loadInvoices(isPullRefresh = false)
+        }
+    }
+
+    LaunchedEffect(currentDestination) {
+        if (currentDestination == AppDestination.JOBS) {
+            jobsViewModel.load()
+            jobsViewModel.loadPreferences()
+        }
+    }
+
+    // Tapping a job notification opens that job directly.
+    LaunchedEffect(initialJobId) {
+        if (initialJobId != null) {
+            currentDestination = AppDestination.JOBS
+            jobsViewModel.load()
+            jobsViewModel.openJob(initialJobId)
+            onJobIntentConsumed()
+        }
+    }
+
+    LaunchedEffect(jobsState.message) {
+        jobsState.message?.let {
+            jobsViewModel.messageShown()
+            shellSnackbarHostState.showSnackbar(message = it, duration = SnackbarDuration.Short)
         }
     }
 
@@ -259,6 +315,8 @@ fun MainAppShell(
                 currentDestination = currentDestination,
                 workspaceViewModel = workspaceViewModel,
                 invoicesViewModel = invoicesViewModel,
+                jobsViewModel = jobsViewModel,
+                jobsState = jobsState,
                 workspaceState = workspaceState,
                 invoicesState = invoicesState,
                 webReloadSignal = webReloadSignal,
@@ -277,6 +335,8 @@ private fun DestinationContentHost(
     currentDestination: AppDestination,
     workspaceViewModel: WorkspaceViewModel,
     invoicesViewModel: InvoicesViewModel,
+    jobsViewModel: JobsViewModel,
+    jobsState: com.hfremovalsadelaide.invoices.jobs.JobsUiState,
     workspaceState: WorkspaceUiState,
     invoicesState: com.hfremovalsadelaide.invoices.ui.invoices.InvoicesUiState,
     webReloadSignal: Int,
@@ -352,6 +412,66 @@ private fun DestinationContentHost(
                     .fillMaxSize()
                     .zIndex(2f)
             )
+        }
+
+        if (currentDestination == AppDestination.JOBS) {
+            val jobs = jobsState.snapshot?.jobs.orEmpty()
+            val openJob = jobs.firstOrNull { it.id == jobsState.openJobId }
+            val signoffJob = jobs.firstOrNull { it.id == jobsState.signoffJobId }
+            var showNotifications by remember { mutableStateOf(false) }
+            val fill = Modifier
+                .fillMaxSize()
+                .zIndex(2f)
+            when {
+                signoffJob != null -> SignOffScreen(
+                    job = signoffJob,
+                    busy = jobsState.busy,
+                    onSubmit = { name, png -> jobsViewModel.submitSignoff(signoffJob.id, name, png) },
+                    onSkip = { reason -> jobsViewModel.skipSignoff(signoffJob.id, reason) },
+                    onDismiss = jobsViewModel::dismissSignoff,
+                    modifier = fill
+                )
+
+                openJob != null -> JobDetailScreen(
+                    job = openJob,
+                    busy = jobsState.busy,
+                    draft = jobsState.draft,
+                    onBack = { jobsViewModel.openJob(null) },
+                    onAct = { jobsViewModel.act(openJob.id, it) },
+                    onCorrect = { field, at, reason -> jobsViewModel.correct(openJob.id, field, at, reason) },
+                    onOpenSignoff = { jobsViewModel.openSignoff(openJob.id) },
+                    onDownloadCompletionPdf = {
+                        workspaceViewModel.downloadAuthenticatedDocument(
+                            url = "${TrustedOriginPolicy.PRODUCTION_URL}/api/jobs/${openJob.id}/completion-pdf",
+                            expectedMimeType = "application/pdf",
+                            openPrintImmediately = false
+                        )
+                    },
+                    onCreateInvoice = { jobsViewModel.requestInvoiceDraft(openJob.id) },
+                    onConfirmDraft = jobsViewModel::confirmInvoiceDraft,
+                    onDismissDraft = jobsViewModel::dismissDraft,
+                    modifier = fill
+                )
+
+                else -> JobsScreen(
+                    state = jobsState,
+                    onSync = jobsViewModel::syncCalendar,
+                    onRefresh = jobsViewModel::load,
+                    onSelectView = jobsViewModel::selectView,
+                    onSelectDate = jobsViewModel::selectDate,
+                    onOpenJob = jobsViewModel::openJob,
+                    onGoToSignIn = { onNavigateTo(AppDestination.WORKSPACE) },
+                    onOpenNotifications = { showNotifications = true },
+                    modifier = fill
+                )
+            }
+            if (showNotifications) {
+                JobNotificationSheet(
+                    preferences = jobsState.preferences,
+                    onToggle = jobsViewModel::setPreference,
+                    onDismiss = { showNotifications = false }
+                )
+            }
         }
 
         if (!isWorkspaceActive) {
