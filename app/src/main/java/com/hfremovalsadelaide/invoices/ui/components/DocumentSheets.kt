@@ -125,7 +125,9 @@ fun DocumentReadySheet(
                         )
                         Text(
                             text = stringResource(
-                                id = if (document.savedToPublicDownloads) {
+                                id = if (document.isPrivate) {
+                                    R.string.download_kept_private
+                                } else if (document.savedToPublicDownloads) {
                                     R.string.download_saved_to_downloads
                                 } else {
                                     R.string.download_saved_to_app_storage

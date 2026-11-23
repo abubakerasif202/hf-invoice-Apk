@@ -61,6 +61,14 @@ android {
     }
 
     buildTypes {
+        debug {
+            // One persistent key for every build (local and CI) so updates always install over the
+            // existing app. When no signing details are provided, Android's default debug key is used,
+            // which on a developer machine is the same key that was stored as the CI secret.
+            if (releaseSigning != null) {
+                signingConfig = signingConfigs.getByName("release")
+            }
+        }
         release {
             if (releaseSigning != null) {
                 signingConfig = signingConfigs.getByName("release")
@@ -83,6 +91,12 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+    }
+
+    sourceSets {
+        // Test flows and fakes shared by the JVM (Robolectric) tests and the on-device tests.
+        getByName("test").kotlin.directories.add("src/sharedTest/java")
+        getByName("androidTest").kotlin.directories.add("src/sharedTest/java")
     }
 
     testOptions {
@@ -121,6 +135,10 @@ dependencies {
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.test.core)
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation(platform(libs.androidx.compose.bom))
+    androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     testImplementation(platform(libs.androidx.compose.bom))
     testImplementation(libs.androidx.compose.ui.test.junit4)
     debugImplementation(libs.androidx.compose.ui.test.manifest)

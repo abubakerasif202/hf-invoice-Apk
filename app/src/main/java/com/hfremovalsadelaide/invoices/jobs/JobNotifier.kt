@@ -20,6 +20,13 @@ object JobNotifier {
     const val EXTRA_JOB_ID = "hf_job_id"
     private const val CHANNEL_ID = "hf_job_reminders"
 
+    /** Tapping a job notification opens the app straight to that job. */
+    fun openIntent(context: Context, jobId: String): Intent =
+        Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra(EXTRA_JOB_ID, jobId)
+        }
+
     fun ensureChannel(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val channel = NotificationChannel(CHANNEL_ID, "Job reminders", NotificationManager.IMPORTANCE_DEFAULT).apply {
@@ -36,10 +43,7 @@ object JobNotifier {
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) return
         ensureChannel(context)
-        val open = Intent(context, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            putExtra(EXTRA_JOB_ID, job.id)
-        }
+        val open = openIntent(context, job.id)
         val pending = PendingIntent.getActivity(context, key.hashCode(), open, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val publicVersion = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification_invoice)

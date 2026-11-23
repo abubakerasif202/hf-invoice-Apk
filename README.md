@@ -163,7 +163,7 @@ To download the APK: GitHub → **Actions** → the run → **Artifacts**.
 
 ## Tests
 
-`.\gradlew.bat :app:testDebugUnitTest` runs 69 JVM tests, including a contract test against real backend output, (Robolectric, no emulator needed): trusted-origin policy (lookalike hosts, userinfo, backslashes, traversal, restore-URL validation), the downloader against a scripted fake connection (session expiry, redirects, error mapping, progress, size cap, cookie handling, cancellation), ViewModel download state and events, Privacy mode, the adaptive layout (WebView host survives rotation), manifest configuration, and the invoice API parser.
+`.\gradlew.bat :app:testDebugUnitTest` runs 72 JVM tests, including a contract test against real backend output, (Robolectric, no emulator needed): trusted-origin policy (lookalike hosts, userinfo, backslashes, traversal, restore-URL validation), the downloader against a scripted fake connection (session expiry, redirects, error mapping, progress, size cap, cookie handling, cancellation), ViewModel download state and events, Privacy mode, the adaptive layout (WebView host survives rotation), manifest configuration, and the invoice API parser.
 
 ## Jobs tab (Jobs & Dispatch)
 
@@ -178,6 +178,37 @@ A fourth tab shows bookings synchronised by the backend from the HF Google Calen
 - **Not yet available:** separate driver/subcontractor logins (the app still uses the single administrator session).
 
 Core library desugaring is enabled so `java.time` works on Android 7.
+## One signing key for every build (updates install over the app)
+
+Local and GitHub Actions builds are signed with the **same** key, so a new APK always installs over the existing app without uninstalling or losing settings.
+
+- The key is the app's long-term key. Its private copy lives outside Git: `%USERPROFILE%\.android\debug.keystore` on the developer machine (back it up) and four GitHub Actions secrets: `HF_SIGNING_KEYSTORE_B64`, `HF_SIGNING_STORE_PASSWORD`, `HF_SIGNING_KEY_ALIAS`, `HF_SIGNING_KEY_PASSWORD`.
+- CI decodes it into the runner's temp folder at build time, builds, and prints the certificate SHA-256 in the run summary. Current fingerprint: `cbf41361728b002f46a4b5b88c368411b86055af9c36acdd4b82f65e0e002d91`.
+- Builds without the secrets (fork pull requests) fall back to Android's default debug key; those APKs will **not** install over this app.
+- Check any APK: `apksigner verify --print-certs app-debug.apk`.
+- Release builds use the same mechanism (`keystore.properties` or `HF_RELEASE_*`), so a signed release also matches.
+- **Upgrading to a dedicated, stronger key later** changes the signature, so Android requires uninstalling once (settings are lost). Do it deliberately, with approval, then replace the four secrets.
+
+## On-device end-to-end tests (read this first)
+
+`app/src/androidTest` holds end-to-end flows (calendar, Start/Pause/Resume/Finish, signature draw/clear/save, skip, PDF request, invoice draft review) that run against an in-memory fixture, plus a notification-privacy test. The flows live in `app/src/sharedTest` (`JobsFlowBase`, `FakeJobsGateway`).
+
+**Do not run them on a phone that holds real app data.** During testing on a Huawei VOG-L29 (Android 10) the system uninstall dialog appeared during the run and the installed app was removed, which also deletes its sign-in and settings. The cause was not identified. The Compose flows also failed to start an activity on that handset ("No compose hierarchies found"), while the notification test passed. Also never use `connectedAndroidTest` (it uninstalls the app afterwards).
+
+Use an Android emulator or a spare test device instead:
+
+```powershell
+.\gradlew.bat :app:assembleDebug :app:assembleDebugAndroidTest
+adb -s <emulator-or-test-device> install -r app\build\outputs\apk\debug\app-debug.apk
+adb -s <emulator-or-test-device> install -r app\build\outputs\apk\androidTest\debug\app-debug-androidTest.apk
+adb -s <emulator-or-test-device> shell am instrument -w com.hfremovalsadelaide.invoices.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+The same logic is covered on the JVM by the ViewModel, contract, renderer and policy tests that run in every build.
+## Privacy of signed documents
+
+Job completion PDFs can contain a customer's signature. They are **never** copied into shared storage automatically: they stay in the app's private cache (pruned automatically), the sheet says "Kept private in the app", and exporting is an explicit Share/Open/Print action. Invoice PDFs keep their existing behaviour.
+
 ## Known limitations
 
 - **No instrumented (on-device UI) test suite and no emulator run** is part of CI. Device checks so far were manual, on one Huawei phone (Android 10).

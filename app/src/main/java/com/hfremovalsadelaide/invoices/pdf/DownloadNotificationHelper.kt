@@ -67,7 +67,9 @@ object DownloadNotificationHelper {
             flags
         )
 
-        val locationLine = if (document.savedToPublicDownloads) {
+        val locationLine = if (document.isPrivate) {
+            context.getString(R.string.download_kept_private)
+        } else if (document.savedToPublicDownloads) {
             context.getString(R.string.download_saved_to_downloads)
         } else {
             context.getString(R.string.download_saved_to_app_storage)

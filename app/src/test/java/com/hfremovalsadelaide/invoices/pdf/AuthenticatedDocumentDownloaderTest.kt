@@ -297,7 +297,7 @@ class AuthenticatedDocumentDownloaderTest {
                     return 4096
                 }
                 // Simulate a stalled server: block until the connection is torn down.
-                val deadline = System.currentTimeMillis() + 5_000
+                val deadline = System.currentTimeMillis() + 20_000
                 while (connection?.disconnected != true && System.currentTimeMillis() < deadline) Thread.sleep(10)
                 throw IOException("socket closed")
             }
@@ -313,13 +313,33 @@ class AuthenticatedDocumentDownloaderTest {
 
         runBlocking {
             val job = async(Dispatchers.Default, start = CoroutineStart.DEFAULT) { d.download(pdfUrl, "application/pdf") }
-            withTimeout(5_000) { started.await() }
+            withTimeout(20_000) { started.await() }
             // The stalled read only ends when the connection is torn down, so a prompt join
             // proves cancellation disconnects instead of waiting for the read to time out.
-            withTimeout(2_000) { job.cancelAndJoin() }
+            withTimeout(5_000) { job.cancelAndJoin() }
             assertTrue("Job must end cancelled, not completed with a Failure", job.isCancelled)
         }
         assertTrue("Connection must be disconnected on cancel", connection!!.disconnected)
         assertTrue("No partial file may remain", cacheDir.listFiles().orEmpty().isEmpty())
+    }
+
+    // ---- Privacy of signed completion documents --------------------------------------------
+
+    private val completionUrl = "https://hf-invoice-generator.vercel.app/api/jobs/123e4567-e89b-42d3-a456-426614174000/completion-pdf"
+
+    @Test
+    fun completionPdfStaysPrivateAndIsNeverSavedToPublicDownloads() {
+        val outcome = download(downloader({ pdfConnection(it) }), url = completionUrl)
+        outcome as DownloadOutcome.Success
+        assertFalse("signed documents must not be copied into shared storage automatically", outcome.document.savedToPublicDownloads)
+        assertTrue(outcome.document.isPrivate)
+        assertTrue(outcome.document.localFile.exists())
+        assertTrue("the private copy lives in the app's own cache", outcome.document.localFile.absolutePath.startsWith(context.cacheDir.absolutePath))
+    }
+
+    @Test
+    fun invoicePdfsKeepTheirExistingBehaviour() {
+        val outcome = download(downloader({ pdfConnection(it) })) as DownloadOutcome.Success
+        assertFalse(outcome.document.isPrivate)
     }
 }

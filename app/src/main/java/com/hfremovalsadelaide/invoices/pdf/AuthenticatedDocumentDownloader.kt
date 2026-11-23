@@ -185,7 +185,8 @@ class AuthenticatedDocumentDownloader(
             } catch (_: IOException) {
                 return DownloadOutcome.Failure(R.string.download_failed_storage)
             }
-            val savedPublic = saveToDownloads(sanitizedName, resolvedMime, responseBytes)
+            val isPrivate = TrustedOriginPolicy.isPrivateDocumentUrl(url)
+            val savedPublic = !isPrivate && saveToDownloads(sanitizedName, resolvedMime, responseBytes)
 
             pruneOldCacheFiles()
 
@@ -195,7 +196,8 @@ class AuthenticatedDocumentDownloader(
                     mimeType = resolvedMime,
                     localFile = localFile,
                     sizeBytes = responseBytes.size.toLong(),
-                    savedToPublicDownloads = savedPublic
+                    savedToPublicDownloads = savedPublic,
+                    isPrivate = isPrivate
                 ),
                 openPrintImmediately = openPrintImmediately
             )

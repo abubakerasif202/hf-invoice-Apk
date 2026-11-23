@@ -46,6 +46,14 @@ object TrustedOriginPolicy {
         return authority.contains('@')
     }
 
+    private val COMPLETION_PDF_PATH = Regex("^/api/jobs/[0-9a-fA-F-]{36}/completion-pdf$")
+
+    /** Job completion PDFs can carry a customer's signature, so they are never auto-saved to shared storage. */
+    fun isPrivateDocumentUrl(url: String?): Boolean {
+        if (!isTrustedOrigin(url)) return false
+        return COMPLETION_PDF_PATH.matches(Uri.parse(url).encodedPath.orEmpty())
+    }
+
     fun isTrustedOrigin(uri: Uri?): Boolean {
         if (uri == null) return false
         val scheme = uri.scheme?.lowercase() ?: return false
