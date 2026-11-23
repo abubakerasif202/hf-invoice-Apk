@@ -290,7 +290,9 @@ fun JobCard(job: Job, onOpen: (String) -> Unit) {
             }
             Text(JobFormat.scheduleText(job), style = MaterialTheme.typography.bodyMedium, color = ForestCanopy)
             job.pickup?.let { Text("From: $it", style = MaterialTheme.typography.bodySmall, color = MutedSage, maxLines = 1) }
-            if (job.bookingStatus != BookingStatus.CONFIRMED) {
+            if (job.notice) {
+                Text("Notice (not a job)", style = MaterialTheme.typography.labelMedium, color = MutedSage)
+            } else if (job.bookingStatus != BookingStatus.CONFIRMED) {
                 Text(if (job.bookingStatus == BookingStatus.UNCONFIRMED) "Unconfirmed details" else "Booking not marked confirmed", style = MaterialTheme.typography.labelMedium, color = GoldAccent.copy(red = 0.55f, green = 0.4f, blue = 0.1f))
             }
         }

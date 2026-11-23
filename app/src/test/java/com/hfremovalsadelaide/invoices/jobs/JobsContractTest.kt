@@ -40,6 +40,13 @@ class JobsContractTest {
     }
 
     @Test
+    fun `notice entries are flagged so the app never offers to start them`() {
+        val notice = JobsApi.parseJob(org.json.JSONObject("""{"id":"n1","title":"BOOKING NOTICE","notice":true,"details":{}}"""))
+        assertTrue(notice.notice)
+        assertEquals(false, snapshot.jobs.first { it.title.startsWith("Removal") }.notice)
+    }
+
+    @Test
     fun `date-only and unconfirmed bookings are never presented as confirmed or timed`() {
         val marker = snapshot.jobs.first { it.title == "Dispatch marker" }
         assertTrue(marker.dateOnly)

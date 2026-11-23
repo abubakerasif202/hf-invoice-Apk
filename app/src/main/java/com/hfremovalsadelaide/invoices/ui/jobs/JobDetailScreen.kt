@@ -87,6 +87,7 @@ fun JobDetailScreen(
             Text(job.title.ifBlank { "Booking" }, color = PureWhite, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, maxLines = 2)
         }
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            if (job.notice) Banner("This calendar entry is a notice or note, not a job, so it cannot be started.", false)
             if (job.cancelled) Banner("Cancelled in the calendar. Recorded times are kept.", true)
             if (job.bookingStatus != com.hfremovalsadelaide.invoices.jobs.BookingStatus.CONFIRMED) Banner("Booking details are not marked confirmed. Check with the customer before relying on them.", false)
 

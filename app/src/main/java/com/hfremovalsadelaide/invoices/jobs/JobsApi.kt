@@ -52,7 +52,8 @@ object JobsApi : JobsGateway {
             actualFinish = instant(actual.str("finish")),
             elapsedMinutes = actual.optInt("elapsedMinutes", 0),
             breakMinutes = actual.optInt("breakMinutes", 0),
-            workingMinutes = actual.optInt("workingMinutes", 0)
+            workingMinutes = actual.optInt("workingMinutes", 0),
+            notice = o.optBoolean("notice", false)
         )
     }
 

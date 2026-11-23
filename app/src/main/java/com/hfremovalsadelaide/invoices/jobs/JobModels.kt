@@ -72,7 +72,9 @@ data class Job(
     val actualFinish: Instant?,
     val elapsedMinutes: Int,
     val breakMinutes: Int,
-    val workingMinutes: Int
+    val workingMinutes: Int,
+    /** Calendar entry that is a notice/historical/duplicate note, not an operational job. */
+    val notice: Boolean = false
 )
 
 data class JobsSnapshot(
