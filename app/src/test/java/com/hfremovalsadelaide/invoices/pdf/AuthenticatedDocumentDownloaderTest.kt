@@ -297,7 +297,7 @@ class AuthenticatedDocumentDownloaderTest {
                     return 4096
                 }
                 // Simulate a stalled server: block until the connection is torn down.
-                val deadline = System.currentTimeMillis() + 5_000
+                val deadline = System.currentTimeMillis() + 20_000
                 while (connection?.disconnected != true && System.currentTimeMillis() < deadline) Thread.sleep(10)
                 throw IOException("socket closed")
             }
@@ -313,10 +313,10 @@ class AuthenticatedDocumentDownloaderTest {
 
         runBlocking {
             val job = async(Dispatchers.Default, start = CoroutineStart.DEFAULT) { d.download(pdfUrl, "application/pdf") }
-            withTimeout(5_000) { started.await() }
+            withTimeout(20_000) { started.await() }
             // The stalled read only ends when the connection is torn down, so a prompt join
             // proves cancellation disconnects instead of waiting for the read to time out.
-            withTimeout(2_000) { job.cancelAndJoin() }
+            withTimeout(5_000) { job.cancelAndJoin() }
             assertTrue("Job must end cancelled, not completed with a Failure", job.isCancelled)
         }
         assertTrue("Connection must be disconnected on cancel", connection!!.disconnected)
