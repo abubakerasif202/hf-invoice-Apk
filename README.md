@@ -163,8 +163,21 @@ To download the APK: GitHub → **Actions** → the run → **Artifacts**.
 
 ## Tests
 
-`.\gradlew.bat :app:testDebugUnitTest` runs 52 JVM tests (Robolectric, no emulator needed): trusted-origin policy (lookalike hosts, userinfo, backslashes, traversal, restore-URL validation), the downloader against a scripted fake connection (session expiry, redirects, error mapping, progress, size cap, cookie handling, cancellation), ViewModel download state and events, Privacy mode, the adaptive layout (WebView host survives rotation), manifest configuration, and the invoice API parser.
+`.\gradlew.bat :app:testDebugUnitTest` runs 69 JVM tests, including a contract test against real backend output, (Robolectric, no emulator needed): trusted-origin policy (lookalike hosts, userinfo, backslashes, traversal, restore-URL validation), the downloader against a scripted fake connection (session expiry, redirects, error mapping, progress, size cap, cookie handling, cancellation), ViewModel download state and events, Privacy mode, the adaptive layout (WebView host survives rotation), manifest configuration, and the invoice API parser.
 
+## Jobs tab (Jobs & Dispatch)
+
+A fourth tab shows bookings synchronised by the backend from the HF Google Calendar. It needs the matching backend release (`/api/jobs`); until that is deployed the tab reports a request error.
+
+- **Calendar views:** Agenda, Day, Week and Month, with Today/Tomorrow shortcuts and a dashboard (today, upcoming, in progress, completed, sign-off due, unconfirmed, possible crew/truck conflicts).
+- **Job details:** customer, pickup and drop-off, package, crew, notes, with Call and Navigate buttons. Missing values show "Not provided"; nothing is guessed. Google's `confirmed` status is never treated as a confirmed booking.
+- **Scheduled vs actual:** scheduled times come from the calendar and are never edited. Start, Pause/Resume and Finish record the server clock. Corrections need a reason and the original is kept in the audit trail.
+- **Sign-off (optional):** after Finish, the customer can sign with a finger and acknowledge the summary (the text states it does not waive rights or approve extra charges), or the driver can Skip with a reason. A skipped job stays "completed, not signed". A completion PDF is available for completed jobs.
+- **Create Invoice From Job:** shows a review of a prefilled draft (working time, break, package rate, warnings) and saves a **draft** only. It never issues an invoice.
+- **Notifications:** per-category toggles (24 h, 1 h, 15 min, start, running late, completed, sign-off pending, rescheduled/cancelled, assignment change). Scheduled with WorkManager, so delivery is not exact-to-the-minute and may be delayed by battery saver. Reminders are de-duplicated by a stable key, survive restarts and reboots, re-check the job state before firing, and never include phone numbers or addresses (private on the lock screen). Tapping one opens the job. No server push is used yet.
+- **Not yet available:** separate driver/subcontractor logins (the app still uses the single administrator session).
+
+Core library desugaring is enabled so `java.time` works on Android 7.
 ## Known limitations
 
 - **No instrumented (on-device UI) test suite and no emulator run** is part of CI. Device checks so far were manual, on one Huawei phone (Android 10).

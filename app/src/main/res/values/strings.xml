@@ -82,6 +82,7 @@
     <string name="tab_workspace">Workspace</string>
     <string name="tab_invoices">Invoices</string>
     <string name="tab_new_invoice">New Invoice</string>
+    <string name="tab_jobs">Jobs</string>
 
     <!-- Native Invoice List Screen -->
     <string name="invoices_screen_title">Previous Invoices</string>

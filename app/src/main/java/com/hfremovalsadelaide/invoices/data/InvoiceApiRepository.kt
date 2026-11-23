@@ -297,6 +297,8 @@ class InvoiceApiRepository {
                 setRequestProperty("Content-Type", "application/json; charset=utf-8")
                 setRequestProperty("Accept", "application/json")
                 setRequestProperty("Cookie", cookie)
+                // The backend rejects state-changing requests that lack its own Origin.
+                setRequestProperty("Origin", TrustedOriginPolicy.PRODUCTION_URL)
                 setFixedLengthStreamingMode(payloadBytes.size)
             }
 
