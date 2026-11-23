@@ -87,7 +87,7 @@ fun JobsScreen(
                         when {
                             snap == null -> "Loading bookings"
                             !snap.calendarConnected -> "Google Calendar not connected"
-                            else -> "Calendar synced" + (snap.lastSyncedAt?.let { " " + it.take(16).replace('T', ' ') + " UTC" } ?: "")
+                            else -> "Calendar synced" + (snap.lastSyncedAt?.let { runCatching { java.time.Instant.parse(it) }.getOrNull() }?.let { " " + JobFormat.time(it) } ?: "")
                         },
                         style = MaterialTheme.typography.bodySmall, color = GoldAccent
                     )

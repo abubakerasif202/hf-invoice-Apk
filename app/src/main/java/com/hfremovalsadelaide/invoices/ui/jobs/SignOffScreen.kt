@@ -83,9 +83,16 @@ fun SignOffScreen(
     val hasInk = SignatureRenderer.hasInk(strokes)
 
     Column(modifier.background(PureWhite)) {
-        Column(Modifier.fillMaxWidth().background(ForestGreen).statusBarsPadding().padding(16.dp)) {
-            Text("HF REMOVALS ADELAIDE", color = GoldAccent, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
-            Text("Job Completion & Customer Sign-Off", color = PureWhite, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        Row(Modifier.fillMaxWidth().background(ForestGreen).statusBarsPadding().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            androidx.compose.foundation.Image(
+                painter = androidx.compose.ui.res.painterResource(com.hfremovalsadelaide.invoices.R.drawable.hf_logo),
+                contentDescription = "HF Removals Adelaide logo",
+                modifier = Modifier.height(64.dp).clip(RoundedCornerShape(8.dp)).testTag("signoff_logo")
+            )
+            Column(Modifier.padding(start = 14.dp)) {
+                Text("HF REMOVALS ADELAIDE", color = GoldAccent, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                Text("Job Completion & Customer Sign-Off", color = PureWhite, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            }
         }
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Line("Customer", job.customerName)
