@@ -189,20 +189,22 @@ Local and GitHub Actions builds are signed with the **same** key, so a new APK a
 - Release builds use the same mechanism (`keystore.properties` or `HF_RELEASE_*`), so a signed release also matches.
 - **Upgrading to a dedicated, stronger key later** changes the signature, so Android requires uninstalling once (settings are lost). Do it deliberately, with approval, then replace the four secrets.
 
-## On-device end-to-end tests (safe for your data)
+## On-device end-to-end tests (read this first)
 
-`app/src/androidTest` drives the Jobs tab against an in-memory fixture (calendar, details, start/pause/resume/finish, signature draw/clear/save, skip, PDF request, invoice draft review, notification privacy and deep link). It never uses the network, the session cookie or a real booking.
+`app/src/androidTest` holds end-to-end flows (calendar, Start/Pause/Resume/Finish, signature draw/clear/save, skip, PDF request, invoice draft review) that run against an in-memory fixture, plus a notification-privacy test. The flows live in `app/src/sharedTest` (`JobsFlowBase`, `FakeJobsGateway`).
 
-Do **not** run `connectedAndroidTest`: Gradle uninstalls the app afterwards, wiping its settings and sign-in. Instead:
+**Do not run them on a phone that holds real app data.** During testing on a Huawei VOG-L29 (Android 10) the system uninstall dialog appeared during the run and the installed app was removed, which also deletes its sign-in and settings. The cause was not identified. The Compose flows also failed to start an activity on that handset ("No compose hierarchies found"), while the notification test passed. Also never use `connectedAndroidTest` (it uninstalls the app afterwards).
+
+Use an Android emulator or a spare test device instead:
 
 ```powershell
 .\gradlew.bat :app:assembleDebug :app:assembleDebugAndroidTest
-adb -s <serial> install -r app\build\outputs\apk\debug\app-debug.apk
-adb -s <serial> install -r app\build\outputs\apk\androidTest\debug\app-debug-androidTest.apk
-adb -s <serial> shell am instrument -w com.hfremovalsadelaide.invoices.test/androidx.test.runner.AndroidJUnitRunner
-adb -s <serial> uninstall com.hfremovalsadelaide.invoices.test   # the test package only, never the app
+adb -s <emulator-or-test-device> install -r app\build\outputs\apk\debug\app-debug.apk
+adb -s <emulator-or-test-device> install -r app\build\outputs\apk\androidTest\debug\app-debug-androidTest.apk
+adb -s <emulator-or-test-device> shell am instrument -w com.hfremovalsadelaide.invoices.test/androidx.test.runner.AndroidJUnitRunner
 ```
 
+The same logic is covered on the JVM by the ViewModel, contract, renderer and policy tests that run in every build.
 ## Privacy of signed documents
 
 Job completion PDFs can contain a customer's signature. They are **never** copied into shared storage automatically: they stay in the app's private cache (pruned automatically), the sheet says "Kept private in the app", and exporting is an explicit Share/Open/Print action. Invoice PDFs keep their existing behaviour.

@@ -93,6 +93,12 @@ android {
         buildConfig = true
     }
 
+    sourceSets {
+        // Test flows and fakes shared by the JVM (Robolectric) tests and the on-device tests.
+        getByName("test").kotlin.directories.add("src/sharedTest/java")
+        getByName("androidTest").kotlin.directories.add("src/sharedTest/java")
+    }
+
     testOptions {
         unitTests {
             isIncludeAndroidResources = true
