@@ -64,10 +64,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.hfremovalsadelaide.invoices.jobs.JobsApi
 import com.hfremovalsadelaide.invoices.jobs.JobsBackground
 import com.hfremovalsadelaide.invoices.jobs.JobsViewModel
-import com.hfremovalsadelaide.invoices.ui.jobs.JobDetailScreen
-import com.hfremovalsadelaide.invoices.ui.jobs.JobNotificationSheet
-import com.hfremovalsadelaide.invoices.ui.jobs.JobsScreen
-import com.hfremovalsadelaide.invoices.ui.jobs.SignOffScreen
+import com.hfremovalsadelaide.invoices.ui.jobs.JobsTab
 import com.hfremovalsadelaide.invoices.ui.invoices.InvoiceListScreen
 import com.hfremovalsadelaide.invoices.ui.invoices.InvoicesEvent
 import com.hfremovalsadelaide.invoices.ui.invoices.InvoicesLoadState
@@ -415,65 +412,22 @@ private fun DestinationContentHost(
         }
 
         if (currentDestination == AppDestination.JOBS) {
-            val jobs = jobsState.snapshot?.jobs.orEmpty()
-            val openJob = jobs.firstOrNull { it.id == jobsState.openJobId }
-            val signoffJob = jobs.firstOrNull { it.id == jobsState.signoffJobId }
-            var showNotifications by remember { mutableStateOf(false) }
-            val fill = Modifier
-                .fillMaxSize()
-                .zIndex(2f)
-            when {
-                signoffJob != null -> SignOffScreen(
-                    job = signoffJob,
-                    busy = jobsState.busy,
-                    onSubmit = { name, png -> jobsViewModel.submitSignoff(signoffJob.id, name, png) },
-                    onSkip = { reason -> jobsViewModel.skipSignoff(signoffJob.id, reason) },
-                    onDismiss = jobsViewModel::dismissSignoff,
-                    modifier = fill
-                )
-
-                openJob != null -> JobDetailScreen(
-                    job = openJob,
-                    busy = jobsState.busy,
-                    draft = jobsState.draft,
-                    onBack = { jobsViewModel.openJob(null) },
-                    onAct = { jobsViewModel.act(openJob.id, it) },
-                    onCorrect = { field, at, reason -> jobsViewModel.correct(openJob.id, field, at, reason) },
-                    onOpenSignoff = { jobsViewModel.openSignoff(openJob.id) },
-                    onDownloadCompletionPdf = {
-                        workspaceViewModel.downloadAuthenticatedDocument(
-                            url = "${TrustedOriginPolicy.PRODUCTION_URL}/api/jobs/${openJob.id}/completion-pdf",
-                            expectedMimeType = "application/pdf",
-                            openPrintImmediately = false
-                        )
-                    },
-                    onCreateInvoice = { jobsViewModel.requestInvoiceDraft(openJob.id) },
-                    onConfirmDraft = jobsViewModel::confirmInvoiceDraft,
-                    onDismissDraft = jobsViewModel::dismissDraft,
-                    modifier = fill
-                )
-
-                else -> JobsScreen(
-                    state = jobsState,
-                    onSync = jobsViewModel::syncCalendar,
-                    onRefresh = jobsViewModel::load,
-                    onSelectView = jobsViewModel::selectView,
-                    onSelectDate = jobsViewModel::selectDate,
-                    onOpenJob = jobsViewModel::openJob,
-                    onGoToSignIn = { onNavigateTo(AppDestination.WORKSPACE) },
-                    onOpenNotifications = { showNotifications = true },
-                    modifier = fill
-                )
-            }
-            if (showNotifications) {
-                JobNotificationSheet(
-                    preferences = jobsState.preferences,
-                    onToggle = jobsViewModel::setPreference,
-                    onDismiss = { showNotifications = false }
-                )
-            }
+            JobsTab(
+                state = jobsState,
+                viewModel = jobsViewModel,
+                onGoToSignIn = { onNavigateTo(AppDestination.WORKSPACE) },
+                onDownloadCompletionPdf = { jobId ->
+                    workspaceViewModel.downloadAuthenticatedDocument(
+                        url = "${TrustedOriginPolicy.PRODUCTION_URL}/api/jobs/$jobId/completion-pdf",
+                        expectedMimeType = "application/pdf",
+                        openPrintImmediately = false
+                    )
+                },
+                modifier = Modifier
+                    .fillMaxSize()
+                    .zIndex(2f)
+            )
         }
-
         if (!isWorkspaceActive) {
             DownloadProgressBanner(
                 visible = workspaceState.isDownloading,
