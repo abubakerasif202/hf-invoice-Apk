@@ -163,7 +163,7 @@ To download the APK: GitHub → **Actions** → the run → **Artifacts**.
 
 ## Tests
 
-`.\gradlew.bat :app:testDebugUnitTest` runs 67 JVM tests (Robolectric, no emulator needed): trusted-origin policy (lookalike hosts, userinfo, backslashes, traversal, restore-URL validation), the downloader against a scripted fake connection (session expiry, redirects, error mapping, progress, size cap, cookie handling, cancellation), ViewModel download state and events, Privacy mode, the adaptive layout (WebView host survives rotation), manifest configuration, and the invoice API parser.
+`.\gradlew.bat :app:testDebugUnitTest` runs 69 JVM tests, including a contract test against real backend output, (Robolectric, no emulator needed): trusted-origin policy (lookalike hosts, userinfo, backslashes, traversal, restore-URL validation), the downloader against a scripted fake connection (session expiry, redirects, error mapping, progress, size cap, cookie handling, cancellation), ViewModel download state and events, Privacy mode, the adaptive layout (WebView host survives rotation), manifest configuration, and the invoice API parser.
 
 ## Jobs tab (Jobs & Dispatch)
 

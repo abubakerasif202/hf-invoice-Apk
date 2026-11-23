@@ -1,0 +1,129 @@
+{
+  "jobs": [
+    {
+      "id": "649ecabb-b9dc-468d-b385-a299277641ce",
+      "googleEventId": "a1",
+      "title": "Removal - Test Customer",
+      "scheduledStart": "2026-11-22T22:30:00.000Z",
+      "scheduledEnd": "2026-11-23T02:30:00.000Z",
+      "dateOnly": false,
+      "serviceDate": null,
+      "timeZone": "Australia/Adelaide",
+      "bookingStatus": "confirmed",
+      "cancelled": false,
+      "state": "completed",
+      "signoffStatus": "none",
+      "details": {
+        "notes": null,
+        "truck": "MR Truck · 12 tonne",
+        "pickup": "1 Test St, Adelaide SA",
+        "crewSize": 2,
+        "reference": "HF-TEST-1",
+        "destination": "2 Sample Rd, Glenelg SA",
+        "customerName": "Test Customer",
+        "customerPhone": "0400 000 000"
+      },
+      "assignees": [],
+      "truck": "MR Truck · 12 tonne",
+      "actual": {
+        "start": "2026-11-23T03:55:53.988Z",
+        "finish": "2026-11-23T03:55:55.102Z",
+        "elapsedMinutes": 0,
+        "breakMinutes": 0,
+        "workingMinutes": 0
+      }
+    },
+    {
+      "id": "b4c1458b-27d8-4edd-b23b-c510af214909",
+      "googleEventId": "a2",
+      "title": "Dispatch marker",
+      "scheduledStart": null,
+      "scheduledEnd": null,
+      "dateOnly": true,
+      "serviceDate": "2026-11-24",
+      "timeZone": "Australia/Adelaide",
+      "bookingStatus": "unknown",
+      "cancelled": false,
+      "state": "scheduled",
+      "signoffStatus": "none",
+      "details": {
+        "notes": null,
+        "truck": null,
+        "pickup": null,
+        "crewSize": null,
+        "reference": null,
+        "destination": null,
+        "customerName": null,
+        "customerPhone": null
+      },
+      "assignees": [],
+      "truck": null,
+      "actual": {
+        "start": null,
+        "finish": null,
+        "elapsedMinutes": 0,
+        "breakMinutes": 0,
+        "workingMinutes": 0
+      }
+    },
+    {
+      "id": "b93924d3-fc77-4704-8151-9cd54155b872",
+      "googleEventId": "a3",
+      "title": "Second job",
+      "scheduledStart": "2026-11-24T21:30:00.000Z",
+      "scheduledEnd": "2026-11-24T23:30:00.000Z",
+      "dateOnly": false,
+      "serviceDate": null,
+      "timeZone": "Australia/Adelaide",
+      "bookingStatus": "unconfirmed",
+      "cancelled": false,
+      "state": "scheduled",
+      "signoffStatus": "none",
+      "details": {
+        "notes": null,
+        "truck": null,
+        "pickup": null,
+        "crewSize": null,
+        "reference": null,
+        "destination": null,
+        "customerName": null,
+        "customerPhone": null
+      },
+      "assignees": [],
+      "truck": null,
+      "actual": {
+        "start": null,
+        "finish": null,
+        "elapsedMinutes": 0,
+        "breakMinutes": 0,
+        "workingMinutes": 0
+      }
+    }
+  ],
+  "summary": {
+    "todayConfirmed": [
+      "649ecabb-b9dc-468d-b385-a299277641ce"
+    ],
+    "upcoming": [
+      "b4c1458b-27d8-4edd-b23b-c510af214909",
+      "b93924d3-fc77-4704-8151-9cd54155b872"
+    ],
+    "inProgress": [],
+    "completed": [
+      "649ecabb-b9dc-468d-b385-a299277641ce"
+    ],
+    "awaitingSignoff": [
+      "649ecabb-b9dc-468d-b385-a299277641ce"
+    ],
+    "unconfirmed": [
+      "b4c1458b-27d8-4edd-b23b-c510af214909",
+      "b93924d3-fc77-4704-8151-9cd54155b872"
+    ],
+    "conflicts": []
+  },
+  "calendar": {
+    "connected": true,
+    "lastSyncedAt": null,
+    "lastError": null
+  }
+}
