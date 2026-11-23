@@ -53,10 +53,35 @@ jobs:
       - name: Make wrapper executable
         run: chmod +x ./gradlew
 
+      - name: Restore the app signing key (from secrets, never from the repository)
+        # Same key on every build, so a new APK installs over the existing app. Without the secrets
+        # (for example a fork pull request) the build falls back to the default debug key.
+        env:
+          KEYSTORE_B64: ${{ secrets.HF_SIGNING_KEYSTORE_B64 }}
+          STORE_PASSWORD: ${{ secrets.HF_SIGNING_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.HF_SIGNING_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.HF_SIGNING_KEY_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/hf-signing.keystore"
+            {
+              echo "HF_RELEASE_STORE_FILE=$RUNNER_TEMP/hf-signing.keystore"
+              echo "HF_RELEASE_STORE_PASSWORD=$STORE_PASSWORD"
+              echo "HF_RELEASE_KEY_ALIAS=$KEY_ALIAS"
+              echo "HF_RELEASE_KEY_PASSWORD=$KEY_PASSWORD"
+            } >> "$GITHUB_ENV"
+            echo "Signing key restored from secrets."
+          else
+            echo "No signing secrets available; using the default debug key."
+          fi
+
       - name: Unit tests, lint and debug APK
-        # The debug build signs with the standard auto-generated Android debug key;
-        # no keystore is read from the repository.
         run: ./gradlew --no-daemon :app:testDebugUnitTest :app:lintDebug :app:assembleDebug --stacktrace
+
+      - name: Show the APK signing certificate fingerprint
+        run: |
+          apk=$(ls app/build/outputs/apk/debug/*.apk | head -n 1)
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "$apk" | grep -E "SHA-256|Signer #1 certificate DN" | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Verify APK exists and is a valid zip
         run: |

@@ -32,6 +32,7 @@
     <string name="download_csv_complete_title">CSV export ready</string>
     <string name="download_saved_to_downloads">Saved to Downloads / HF Removals Invoices</string>
     <string name="download_saved_to_app_storage">Saved to app Downloads folder</string>
+    <string name="download_kept_private">Kept private in the app. Use Share to export it.</string>
     <string name="download_failed_generic">Could not download document. Please try again.</string>
     <string name="download_failed_auth">Session Expired — Sign In Again</string>
     <string name="session_expired_action">Sign in</string>

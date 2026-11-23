@@ -165,9 +165,14 @@ private fun JobsContent(
         }
 
         item {
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 CalendarView.entries.forEach { v ->
-                    FilterChip(selected = state.view == v, onClick = { onSelectView(v) }, label = { Text(v.label) }, modifier = Modifier.testTag("jobs_view_${v.name.lowercase()}"))
+                    FilterChip(
+                        selected = state.view == v,
+                        onClick = { onSelectView(v) },
+                        label = { Text(v.label, maxLines = 1, modifier = Modifier.fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Center) },
+                        modifier = Modifier.weight(1f).testTag("jobs_view_${v.name.lowercase()}")
+                    )
                 }
             }
         }

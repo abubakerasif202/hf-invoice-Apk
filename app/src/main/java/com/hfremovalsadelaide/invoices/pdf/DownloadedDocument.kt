@@ -12,7 +12,9 @@ data class DownloadedDocument(
     val localFile: File,
     val sizeBytes: Long,
     val savedToPublicDownloads: Boolean,
-    val downloadedAtMillis: Long = System.currentTimeMillis()
+    val downloadedAtMillis: Long = System.currentTimeMillis(),
+    /** Documents holding signatures or customer details are kept in app-private storage; export is an explicit Share. */
+    val isPrivate: Boolean = false
 ) {
     val isPdf: Boolean
         get() = mimeType.equals("application/pdf", ignoreCase = true) ||

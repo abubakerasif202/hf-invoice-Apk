@@ -61,6 +61,14 @@ android {
     }
 
     buildTypes {
+        debug {
+            // One persistent key for every build (local and CI) so updates always install over the
+            // existing app. When no signing details are provided, Android's default debug key is used,
+            // which on a developer machine is the same key that was stored as the CI secret.
+            if (releaseSigning != null) {
+                signingConfig = signingConfigs.getByName("release")
+            }
+        }
         release {
             if (releaseSigning != null) {
                 signingConfig = signingConfigs.getByName("release")

@@ -322,4 +322,24 @@ class AuthenticatedDocumentDownloaderTest {
         assertTrue("Connection must be disconnected on cancel", connection!!.disconnected)
         assertTrue("No partial file may remain", cacheDir.listFiles().orEmpty().isEmpty())
     }
+
+    // ---- Privacy of signed completion documents --------------------------------------------
+
+    private val completionUrl = "https://hf-invoice-generator.vercel.app/api/jobs/123e4567-e89b-42d3-a456-426614174000/completion-pdf"
+
+    @Test
+    fun completionPdfStaysPrivateAndIsNeverSavedToPublicDownloads() {
+        val outcome = download(downloader({ pdfConnection(it) }), url = completionUrl)
+        outcome as DownloadOutcome.Success
+        assertFalse("signed documents must not be copied into shared storage automatically", outcome.document.savedToPublicDownloads)
+        assertTrue(outcome.document.isPrivate)
+        assertTrue(outcome.document.localFile.exists())
+        assertTrue("the private copy lives in the app's own cache", outcome.document.localFile.absolutePath.startsWith(context.cacheDir.absolutePath))
+    }
+
+    @Test
+    fun invoicePdfsKeepTheirExistingBehaviour() {
+        val outcome = download(downloader({ pdfConnection(it) })) as DownloadOutcome.Success
+        assertFalse(outcome.document.isPrivate)
+    }
 }
