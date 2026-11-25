@@ -583,7 +583,9 @@ fun MainAppShell(
                                 allInvoices = invoicesState.allInvoices,
                                 modifier = Modifier.fillMaxSize(),
                                 launchIntent = crmLaunchIntent,
-                                onLaunchIntentConsumed = { crmLaunchIntent = null }
+                                onLaunchIntentConsumed = { crmLaunchIntent = null },
+                                jobsLoaded = jobsState.snapshot != null,
+                                invoicesLoaded = invoicesState.loadState is InvoicesLoadState.Loaded
                             )
 
                             AppDestination.MORE -> MoreRouterScreen(

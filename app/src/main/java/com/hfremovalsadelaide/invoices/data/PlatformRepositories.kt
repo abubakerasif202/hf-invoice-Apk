@@ -205,7 +205,11 @@ data class OperationsSnapshot(
     val trucksUnavailable: Int,
     val trucksOnJobsToday: Int,
     val trucksAvailableToday: Int,
-    val workingStaffToday: Int,
+    /** Distinct people on today's jobs; each person counted once. */
+    val staffScheduledToday: Int,
+    /** Subset of those on a job that is in progress or paused right now. */
+    val staffWorkingNow: Int,
+    val staffOnLeaveToday: Int,
     val crewConflicts: List<OpsConflict>,
     val maintenanceDue: List<OpsMaintenanceItem>
 )
@@ -227,7 +231,9 @@ internal fun parseOperationsSnapshot(root: JSONObject): OperationsSnapshot? {
         trucksUnavailable = o.optInt("trucksUnavailable", 0),
         trucksOnJobsToday = o.optInt("trucksOnJobsToday", 0),
         trucksAvailableToday = o.optInt("trucksAvailableToday", 0),
-        workingStaffToday = o.optInt("workingStaffToday", 0),
+        staffScheduledToday = o.optInt("staffScheduledToday", 0),
+        staffWorkingNow = o.optInt("staffWorkingNow", 0),
+        staffOnLeaveToday = o.optInt("staffOnLeaveToday", 0),
         crewConflicts = List(conflicts.length()) { i ->
             val c = conflicts.getJSONObject(i)
             val reasons = c.optJSONArray("reasons") ?: JSONArray()

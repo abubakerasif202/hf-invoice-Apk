@@ -622,7 +622,15 @@ private fun operationsTiles(o: OperationsSnapshot): List<KpiCardData> = listOf(
         false,
         "${o.trucksOnJobsToday} on jobs · ${o.trucksUnavailable} unavailable"
     ),
-    KpiCardData("Staff Working Today", o.workingStaffToday.toString(), false),
+    KpiCardData(
+        "Staff Scheduled",
+        o.staffScheduledToday.toString(),
+        false,
+        buildList {
+            add("${o.staffWorkingNow} working now")
+            if (o.staffOnLeaveToday > 0) add("${o.staffOnLeaveToday} on leave")
+        }.joinToString(" · ")
+    ),
     KpiCardData("Crew Conflicts", o.crewConflicts.size.toString(), o.crewConflicts.isNotEmpty()),
     KpiCardData("Maintenance Due", o.maintenanceDue.size.toString(), o.maintenanceDue.isNotEmpty(), "Rego 30d · service 14d")
 )

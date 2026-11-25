@@ -20,7 +20,7 @@ class OperationsSnapshotParserTest {
           "activeJobs": 1,
           "unassignedBookings": 4, "unassignedCrew": 3, "unassignedTruck": 2,
           "trucksTotal": 5, "trucksUnavailable": 1, "trucksOnJobsToday": 2, "trucksAvailableToday": 2,
-          "workingStaffToday": 6,
+          "staffScheduledToday": 6, "staffWorkingNow": 2, "staffOnLeaveToday": 1,
           "crewConflicts": [{"jobA": "a", "jobB": "b", "reasons": ["crew", "truck"]}],
           "maintenanceDue": [
             {"vehicleId": "v1", "vehicleName": "T1", "kind": "rego", "dueDate": "2026-12-01", "message": "T1 rego due 2026-12-01"}
@@ -42,11 +42,29 @@ class OperationsSnapshotParserTest {
         assertEquals(2, ops.unassignedTruck)
         assertEquals(5, ops.trucksTotal)
         assertEquals(2, ops.trucksAvailableToday)
-        assertEquals(6, ops.workingStaffToday)
+        assertEquals(6, ops.staffScheduledToday)
+        assertEquals(2, ops.staffWorkingNow)
+        assertEquals(1, ops.staffOnLeaveToday)
         assertEquals(listOf("crew", "truck"), ops.crewConflicts.single().reasons)
         assertEquals("a", ops.crewConflicts.single().jobA)
         assertEquals("rego", ops.maintenanceDue.single().kind)
         assertEquals("2026-12-01", ops.maintenanceDue.single().dueDate)
+    }
+
+    /** operations_contract.json is real output of the backend's computeAnalytics() (synthetic data, tests/analytics-live.test.ts). */
+    @Test
+    fun `the real backend payload parses with every field the dashboard relies on`() {
+        val text = requireNotNull(javaClass.classLoader?.getResourceAsStream("operations_contract.json")).bufferedReader().readText()
+        val ops = requireNotNull(parseOperationsSnapshot(JSONObject(text)))
+        assertEquals(1, ops.confirmedToday)
+        assertEquals(1, ops.confirmedTomorrow)
+        assertEquals(1, ops.activeJobs)
+        assertEquals(2, ops.trucksTotal)
+        assertEquals(1, ops.staffScheduledToday)
+        assertEquals(1, ops.staffWorkingNow)
+        assertEquals("rego", ops.maintenanceDue.single().kind)
+        assertEquals("T1", ops.maintenanceDue.single().vehicleName)
+        assertEquals("2026-12-10", ops.maintenanceDue.single().dueDate)
     }
 
     @Test

@@ -99,6 +99,13 @@ private val QUOTE_STAGES = listOf(
     "Paid"
 )
 
+/** Counts that have not loaded yet are left out instead of reading as a misleading zero. */
+internal fun customerActivityLine(jobs: Int?, invoices: Int?, kind: String): String = listOfNotNull(
+    jobs?.let { "$it ${if (it == 1) "job" else "jobs"}" },
+    invoices?.let { "$it ${if (it == 1) "invoice" else "invoices"}" },
+    kind
+).joinToString(" · ")
+
 /** One-shot request from another screen (e.g. dashboard quick actions) to open a CRM dialog on arrival. */
 enum class CrmLaunchIntent { ADD_CUSTOMER, CREATE_QUOTE }
 
@@ -111,7 +118,9 @@ fun CustomersScreen(
     allInvoices: List<InvoiceSummary>,
     modifier: Modifier = Modifier,
     launchIntent: CrmLaunchIntent? = null,
-    onLaunchIntentConsumed: () -> Unit = {}
+    onLaunchIntentConsumed: () -> Unit = {},
+    jobsLoaded: Boolean = true,
+    invoicesLoaded: Boolean = true
 ) {
     val context = LocalContext.current
     val crm = platformState.crm
@@ -251,7 +260,7 @@ fun CustomersScreen(
                                 val pastJobsCount = allJobs.count {
                                     it.customerName?.equals(customer.name, ignoreCase = true) == true
                                 }
-                                val returning = pastInvoicesCount + pastJobsCount > 1
+                                val returning = jobsLoaded && invoicesLoaded && pastInvoicesCount + pastJobsCount > 1
                                 Card(
                                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
@@ -290,7 +299,11 @@ fun CustomersScreen(
                                             )
                                         }
                                         Text(
-                                            "$pastJobsCount jobs · $pastInvoicesCount invoices · ${customer.kind}",
+                                            customerActivityLine(
+                                                jobs = pastJobsCount.takeIf { jobsLoaded },
+                                                invoices = pastInvoicesCount.takeIf { invoicesLoaded },
+                                                kind = customer.kind
+                                            ),
                                             style = MaterialTheme.typography.labelSmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
