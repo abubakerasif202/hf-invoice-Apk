@@ -275,7 +275,8 @@ interface JobsGateway {
         phase: String,
         caption: String,
         imageBase64: String,
-        inventoryItemId: String? = null
+        inventoryItemId: String? = null,
+        idempotencyKey: String? = null
     ): JobsResult<String> = JobsResult.Failure("Not supported")
 }
 

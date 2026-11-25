@@ -2,6 +2,7 @@ package com.hfremovalsadelaide.invoices.ui
 
 import com.hfremovalsadelaide.invoices.jobs.BookingStatus
 import com.hfremovalsadelaide.invoices.jobs.ConditionReportItem
+import com.hfremovalsadelaide.invoices.jobs.FakeJobsGateway
 import com.hfremovalsadelaide.invoices.jobs.InventoryStatus
 import com.hfremovalsadelaide.invoices.jobs.Job
 import com.hfremovalsadelaide.invoices.jobs.JobSnapshotCodec
@@ -14,6 +15,7 @@ import com.hfremovalsadelaide.invoices.jobs.JobsViewModel
 import com.hfremovalsadelaide.invoices.jobs.NotificationCategory
 import com.hfremovalsadelaide.invoices.jobs.ReminderText
 import com.hfremovalsadelaide.invoices.jobs.SignoffStatus
+import com.hfremovalsadelaide.invoices.network.ApiResult
 import com.hfremovalsadelaide.invoices.offline.CipherBox
 import com.hfremovalsadelaide.invoices.offline.EncryptedStore
 import com.hfremovalsadelaide.invoices.offline.OfflineOpKind
@@ -26,6 +28,7 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.json.JSONObject
+import org.json.JSONArray
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -114,6 +117,38 @@ class PlatformViewModelsTest {
         assertEquals(15, decoded.jobs.single().waitingMinutes)
         assertEquals(listOf("job-1" to "job-2"), decoded.conflicts)
         assertEquals(setOf("job-2"), decoded.missingInfoIds)
+    }
+
+    @Test
+    fun `photo retry reuses the key sent before the online response was lost`() = runTest(dispatcher) {
+        val store = EncryptedStore(RuntimeEnvironment.getApplication(), object : CipherBox {
+            override fun encrypt(plainText: String) = plainText.toByteArray()
+            override fun decrypt(cipherBlob: ByteArray) = String(cipherBlob)
+        }).apply { clearAll() }
+        var onlineKey: String? = null
+        val gateway = object : JobsGateway by FakeJobsGateway(emptyList()) {
+            override suspend fun uploadPhoto(id: String, phase: String, caption: String, imageBase64: String,
+                inventoryItemId: String?, idempotencyKey: String?): JobsResult<String> {
+                onlineKey = idempotencyKey
+                return JobsResult.Failure("Connection timed out.")
+            }
+        }
+        var retryKey: String? = null
+        val queue = OfflineSyncQueue(store) { request ->
+            val key = request.getJSONArray("operations").getJSONObject(0).getString("idempotencyKey")
+            retryKey = key
+            val receipt = JSONObject().put("idempotencyKey", key).put("status", "deduped")
+            ApiResult.Success(JSONObject().put("results", JSONArray().put(receipt)))
+        }.apply { bindAccount("driver-one") }
+        val vm = JobsViewModel(gateway = gateway, syncQueue = queue, isNetworkAvailable = { true })
+
+        vm.uploadPhoto("job-1", "before", "Test photo", "dGVzdC1waG90bw==")
+        advanceUntilIdle()
+        assertNotNull(onlineKey)
+        assertEquals(onlineKey, queue.operations.value.single().idempotencyKey)
+        queue.flush()
+        assertEquals(onlineKey, retryKey)
+        assertEquals(0, queue.pendingCount)
     }
 
     @Test

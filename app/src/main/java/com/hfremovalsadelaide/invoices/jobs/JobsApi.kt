@@ -376,7 +376,8 @@ object JobsApi : JobsGateway {
         phase: String,
         caption: String,
         imageBase64: String,
-        inventoryItemId: String?
+        inventoryItemId: String?,
+        idempotencyKey: String?
     ): JobsResult<String> = call(
         "POST",
         "/api/jobs/$id/photos",
@@ -385,6 +386,7 @@ object JobsApi : JobsGateway {
             .put("caption", caption)
             .put("imageBase64", imageBase64)
             .put("inventoryItemId", inventoryItemId ?: JSONObject.NULL)
+            .put("idempotencyKey", idempotencyKey ?: JSONObject.NULL)
     ) { JobsResult.Success(it) }
 
     private suspend fun <T> call(method: String, path: String, body: JSONObject?, parse: (String) -> JobsResult<T>): JobsResult<T> =

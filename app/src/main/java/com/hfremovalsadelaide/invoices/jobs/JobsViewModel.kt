@@ -14,6 +14,7 @@ import kotlinx.coroutines.launch
 import org.json.JSONObject
 import java.time.LocalDate
 import java.time.ZoneId
+import java.util.UUID
 
 enum class CalendarView(val label: String) {
     AGENDA("Agenda"),
@@ -397,25 +398,26 @@ class JobsViewModel(
     }
 
     fun uploadPhoto(jobId: String, phase: String, caption: String, imageBase64: String, inventoryItemId: String? = null) = guarded {
+        val idempotencyKey = UUID.randomUUID().toString()
         val payload = JSONObject()
             .put("phase", phase)
             .put("inventoryItemId", inventoryItemId ?: JSONObject.NULL)
             .put("caption", caption.trim())
             .put("imageBase64", imageBase64)
         if (!isNetworkAvailable() && syncQueue != null) {
-            syncQueue.enqueue(OfflineOpKind.JOB_PHOTO, jobId, "Photo ($phase)", payload)
+            syncQueue.enqueue(OfflineOpKind.JOB_PHOTO, jobId, "Photo ($phase)", payload, idempotencyKey = idempotencyKey)
             scheduleOfflineSync()
             say("Photo queued offline. Will upload when connected.")
             return@guarded
         }
-        when (val r = gateway.uploadPhoto(jobId, phase, caption.trim(), imageBase64, inventoryItemId)) {
+        when (val r = gateway.uploadPhoto(jobId, phase, caption.trim(), imageBase64, inventoryItemId, idempotencyKey)) {
             is JobsResult.Success -> {
                 say("Photo attached securely.")
                 refreshJobDetail(jobId)
             }
             is JobsResult.Failure -> {
                 if (syncQueue != null && isConnectionError(r.message)) {
-                    syncQueue.enqueue(OfflineOpKind.JOB_PHOTO, jobId, "Photo ($phase)", payload)
+                    syncQueue.enqueue(OfflineOpKind.JOB_PHOTO, jobId, "Photo ($phase)", payload, idempotencyKey = idempotencyKey)
                     scheduleOfflineSync()
                     say("Photo queued offline. Will upload when connected.")
                 } else {
