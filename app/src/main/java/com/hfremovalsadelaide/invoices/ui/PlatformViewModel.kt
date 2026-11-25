@@ -50,6 +50,7 @@ data class PlatformUiState(
     val queuedOps: List<QueuedOperation> = emptyList(),
     val syncBusy: Boolean = false,
     val staff: List<StaffMember> = emptyList(),
+    val staffLoaded: Boolean = false,
     val fleet: FleetSnapshot? = null,
     val rateCards: List<RateCard> = emptyList(),
     val crm: CrmSnapshot? = null,
@@ -306,7 +307,7 @@ class PlatformViewModel(
 
     fun loadStaff() = accountScope.launch {
         val res = PlatformRepository.fetchStaff()
-        if (res is ApiResult.Success) _state.update { it.copy(staff = res.data) }
+        if (res is ApiResult.Success) _state.update { it.copy(staff = res.data, staffLoaded = true) }
     }
 
     fun createStaff(name: String, email: String, phone: String, role: String, employmentType: String, hourlyRate: String?) {

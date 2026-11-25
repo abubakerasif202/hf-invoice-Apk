@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
@@ -141,6 +142,8 @@ fun CustomersScreen(
         modifier = modifier
             .fillMaxSize()
             .testTag("customers_screen"),
+        // The green header already pads for the status bar; a Scaffold inset on top would leave a light strip above it.
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         floatingActionButton = {
             if (canWrite && activeTab != CrmTab.FOLLOW_UPS) {
                 FloatingActionButton(

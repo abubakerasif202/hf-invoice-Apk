@@ -156,6 +156,13 @@ fun MoreRouterScreen(
     }
 }
 
+/** A count is only shown once its data has loaded, so an unloaded module never reads as a misleading zero. */
+internal fun moduleCountSubtitle(count: Int?, noun: String, detail: String, loading: Boolean): String = when {
+    count != null -> "$count $noun · $detail"
+    loading -> "Loading… · $detail"
+    else -> detail
+}
+
 @Composable
 private fun MoreHubGrid(
     state: PlatformUiState,
@@ -173,7 +180,12 @@ private fun MoreHubGrid(
                 MoreRowItem(
                     icon = Icons.Rounded.People,
                     title = "Staff & Accounts",
-                    subtitle = "${state.staff.size} team members · Invite, roles & revocation",
+                    subtitle = moduleCountSubtitle(
+                        count = state.staff.size.takeIf { state.staffLoaded },
+                        noun = "team members",
+                        detail = "Invite, roles & revocation",
+                        loading = state.loadingModule
+                    ),
                     onClick = { onSelectSection(MoreSection.STAFF) },
                     testTag = "more_staff"
                 )
@@ -184,7 +196,12 @@ private fun MoreHubGrid(
                 MoreRowItem(
                     icon = Icons.Rounded.LocalShipping,
                     title = "Vehicles & Fleet",
-                    subtitle = "${state.fleet?.vehicles?.size ?: 0} trucks · Rego, maintenance & conflicts",
+                    subtitle = moduleCountSubtitle(
+                        count = state.fleet?.vehicles?.size,
+                        noun = "trucks",
+                        detail = "Rego, maintenance & conflicts",
+                        loading = state.loadingModule
+                    ),
                     onClick = { onSelectSection(MoreSection.FLEET) },
                     testTag = "more_fleet"
                 )
@@ -194,7 +211,12 @@ private fun MoreHubGrid(
             MoreRowItem(
                 icon = Icons.Rounded.Schedule,
                 title = "Timesheets & Pay Statements",
-                subtitle = "${state.timesheets?.timesheets?.size ?: 0} logs · Employee & subcontractor pay",
+                subtitle = moduleCountSubtitle(
+                    count = state.timesheets?.timesheets?.size,
+                    noun = "logs",
+                    detail = "Employee & subcontractor pay",
+                    loading = state.loadingModule
+                ),
                 onClick = { onSelectSection(MoreSection.TIMESHEETS) },
                 testTag = "more_timesheets"
             )

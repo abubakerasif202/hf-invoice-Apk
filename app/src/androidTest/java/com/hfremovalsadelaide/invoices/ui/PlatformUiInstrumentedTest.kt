@@ -331,7 +331,8 @@ class PlatformUiInstrumentedTest {
         }
         rule.onNodeWithTag("jobs_list").performScrollToNode(hasTestTag("jobs_search_input"))
         rule.onNodeWithTag("jobs_search_input").assertIsDisplayed()
-        rule.onNodeWithTag("jobs_list").performScrollToNode(hasTestTag("jobs_filter_confirmed"))
+        // The status filters now live in a menu behind the filter button next to the search field.
+        rule.onNodeWithTag("jobs_filter_menu_button").performClick()
         rule.onNodeWithTag("jobs_filter_confirmed").assertIsDisplayed()
         rule.onNodeWithTag("jobs_list").performScrollToNode(hasTestTag("jobs_view_dispatch"))
         rule.onNodeWithTag("jobs_view_dispatch").assertIsDisplayed()

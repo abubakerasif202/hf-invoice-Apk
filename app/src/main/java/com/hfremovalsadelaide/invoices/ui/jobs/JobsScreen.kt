@@ -29,11 +29,15 @@ import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.rounded.FilterList
 import androidx.compose.material.icons.rounded.GroupAdd
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -78,6 +82,7 @@ import com.hfremovalsadelaide.invoices.jobs.SignoffStatus
 import com.hfremovalsadelaide.invoices.ui.theme.ForestGreen
 import com.hfremovalsadelaide.invoices.ui.theme.GoldAccent
 import com.hfremovalsadelaide.invoices.ui.theme.PureWhite
+import androidx.compose.ui.text.style.TextOverflow
 import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
@@ -211,8 +216,64 @@ private fun JobsContent(
         }
         snap.lastError?.let { err -> item { Text("Last sync problem: $err", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) } }
 
+        // Search plus a status-filter menu on one row: the old five-chip filter row cost a whole line of screen.
         item {
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            var filterMenuOpen by remember { mutableStateOf(false) }
+            OutlinedTextField(
+                value = state.searchQuery,
+                onValueChange = onSearchQueryChanged,
+                placeholder = { Text("Search jobs", maxLines = 1) },
+                leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
+                trailingIcon = {
+                    Box {
+                        IconButton(onClick = { filterMenuOpen = true }, modifier = Modifier.testTag("jobs_filter_menu_button")) {
+                            Icon(
+                                Icons.Rounded.FilterList,
+                                contentDescription = "Filter jobs: ${state.statusFilter.label}",
+                                tint = if (state.statusFilter == JobStatusFilter.ALL) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.secondary
+                            )
+                        }
+                        DropdownMenu(expanded = filterMenuOpen, onDismissRequest = { filterMenuOpen = false }) {
+                            JobStatusFilter.entries.forEach { f ->
+                                DropdownMenuItem(
+                                    text = { Text(if (state.statusFilter == f) "✓ ${f.label}" else f.label) },
+                                    onClick = {
+                                        filterMenuOpen = false
+                                        onStatusFilterSelected(f)
+                                    },
+                                    modifier = Modifier.testTag("jobs_filter_${f.name.lowercase()}")
+                                )
+                            }
+                        }
+                    }
+                },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().testTag("jobs_search_input")
+            )
+        }
+
+        item {
+            val today = LocalDate.now(JobFormat.zone)
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                CalendarView.entries.forEach { v ->
+                    FilterChip(
+                        selected = state.view == v,
+                        onClick = { onSelectView(v) },
+                        label = { Text(v.label, maxLines = 1, textAlign = TextAlign.Center) },
+                        modifier = Modifier.testTag("jobs_view_${v.name.lowercase()}")
+                    )
+                }
+                AssistChip(onClick = { onSelectDate(today) }, label = { Text("Today") }, modifier = Modifier.testTag("jobs_today"))
+                AssistChip(onClick = { onSelectDate(today.plusDays(1)) }, label = { Text("Tomorrow") }, modifier = Modifier.testTag("jobs_tomorrow"))
+            }
+        }
+
+        item {
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 val stats = listOf(
                     "Today" to snap.todayConfirmed.size,
                     "Upcoming" to snap.upcoming.size,
@@ -225,74 +286,21 @@ private fun JobsContent(
                 )
                 items(stats) { (label, n) ->
                     val alert = (label == "Conflicts" || label == "Unconfirmed" || label == "Sign-off due" || label == "Missing info") && n > 0
-                    Card(
-                        colors = CardDefaults.cardColors(
-                            containerColor = if (alert) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.primaryContainer
+                    AssistChip(
+                        onClick = {},
+                        label = { Text("$label $n", maxLines = 1) },
+                        colors = AssistChipDefaults.assistChipColors(
+                            containerColor = if (alert) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.primaryContainer,
+                            labelColor = MaterialTheme.colorScheme.onSurface
                         ),
                         modifier = Modifier.semantics { contentDescription = "$label: $n" }
-                    ) {
-                        Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(n.toString(), style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-                            Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurface)
-                        }
-                    }
+                    )
                 }
             }
         }
         if (snap.conflicts.isNotEmpty()) item {
             val titles = snap.conflicts.joinToString("; ") { (a, b) -> "${snap.jobs.firstOrNull { it.id == a }?.title ?: a} / ${snap.jobs.firstOrNull { it.id == b }?.title ?: b}" }
             Text("Possible crew or truck conflict: $titles", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-        }
-
-        item {
-            OutlinedTextField(
-                value = state.searchQuery,
-                onValueChange = onSearchQueryChanged,
-                placeholder = { Text("Search customer, suburb, truck, reference or date") },
-                leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth().testTag("jobs_search_input")
-            )
-        }
-
-        item {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
-            ) {
-                JobStatusFilter.entries.forEach { f ->
-                    FilterChip(
-                        selected = state.statusFilter == f,
-                        onClick = { onStatusFilterSelected(f) },
-                        label = { Text(f.label) },
-                        modifier = Modifier.testTag("jobs_filter_${f.name.lowercase()}")
-                    )
-                }
-            }
-        }
-
-        item {
-            Row(
-                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                CalendarView.entries.forEach { v ->
-                    FilterChip(
-                        selected = state.view == v,
-                        onClick = { onSelectView(v) },
-                        label = { Text(v.label, maxLines = 1, textAlign = TextAlign.Center) },
-                        modifier = Modifier.testTag("jobs_view_${v.name.lowercase()}")
-                    )
-                }
-            }
-        }
-
-        item {
-            val today = LocalDate.now(JobFormat.zone)
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                AssistChip(onClick = { onSelectDate(today) }, label = { Text("Today") }, modifier = Modifier.testTag("jobs_today"))
-                AssistChip(onClick = { onSelectDate(today.plusDays(1)) }, label = { Text("Tomorrow") }, modifier = Modifier.testTag("jobs_tomorrow"))
-            }
         }
 
         when (state.view) {
@@ -315,7 +323,8 @@ private fun androidx.compose.foundation.lazy.LazyListScope.dispatchBoard(
     onRequestReschedule: (Job) -> Unit
 ) {
     item {
-        DateNav("Dispatch · ${JobFormat.longDay(state.selectedDate)}", { onSelectDate(state.selectedDate.minusDays(1)) }, { onSelectDate(state.selectedDate.plusDays(1)) })
+        // Short date: the long form wrapped to two lines and pushed the first job below the fold.
+        DateNav(JobFormat.day(state.selectedDate), { onSelectDate(state.selectedDate.minusDays(1)) }, { onSelectDate(state.selectedDate.plusDays(1)) })
     }
     val dayJobs = jobs.filter { JobFormat.localDate(it) == state.selectedDate }.sortedBy { it.effectiveStart }
     val conflictIds = state.snapshot?.conflicts.orEmpty().flatMap { listOf(it.first, it.second) }.toSet()
@@ -332,8 +341,8 @@ private fun androidx.compose.foundation.lazy.LazyListScope.dispatchBoard(
             val medium = attention.values.count { it.level == AttentionLevel.MEDIUM }
             val subs = dayJobs.count { j -> j.assignmentDetails.orEmpty().any { it.role == "subcontractor" } }
             Text(
-                text = "$high need action · $medium to review · $subs with subcontractors",
-                style = MaterialTheme.typography.labelLarge,
+                text = "$high action · $medium review · $subs subcontractor",
+                style = MaterialTheme.typography.labelMedium,
                 color = if (high > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.testTag("dispatch_summary")
             )
@@ -392,11 +401,23 @@ private fun DispatchJobCard(
     ) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text(job.customerName ?: job.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                Text(
+                    job.customerName ?: job.title,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
                 StatusPill(job)
             }
             Text("${JobFormat.scheduleText(job)} ($duration)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
-            Text("Pickup: ${job.pickup ?: "TBC"} -> Drop-off: ${job.destination ?: "TBC"}", style = MaterialTheme.typography.bodySmall)
+            Text(
+                "Pickup: ${job.pickup ?: "TBC"} -> Drop-off: ${job.destination ?: "TBC"}",
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
             Text("Crew (${job.crewSize ?: "?"}): ${job.assignees.takeIf { it.isNotEmpty() }?.joinToString() ?: "Unassigned"}", style = MaterialTheme.typography.bodySmall)
             val subcontractors = job.assignmentDetails.orEmpty().filter { it.role == "subcontractor" }.map { it.assignee }
             if (subcontractors.isNotEmpty()) {
