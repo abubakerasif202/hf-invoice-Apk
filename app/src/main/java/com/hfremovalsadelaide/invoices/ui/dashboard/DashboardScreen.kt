@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -67,6 +69,7 @@ import androidx.compose.ui.unit.sp
 import com.hfremovalsadelaide.invoices.R
 import com.hfremovalsadelaide.invoices.data.AnalyticsSnapshot
 import com.hfremovalsadelaide.invoices.data.MonthlyTrendPoint
+import com.hfremovalsadelaide.invoices.data.OperationsSnapshot
 import com.hfremovalsadelaide.invoices.jobs.Job
 import com.hfremovalsadelaide.invoices.jobs.JobFormat
 import com.hfremovalsadelaide.invoices.jobs.JobsSnapshot
@@ -313,6 +316,14 @@ fun DashboardScreen(
                     )
                 }
 
+                // Live operations snapshot (server-computed; absent when the backend predates it)
+                val operations = analytics?.operations
+                if (operations != null && user?.can("reports.read") == true) {
+                    item(key = "operations") {
+                        OperationsOverview(operations = operations, jobsSnapshot = jobsSnapshot, onOpenDispatch = onNavigateJobsDispatch)
+                    }
+                }
+
                 // Revenue trend visualization (Owners / Admins with analytics.read)
                 if (analytics != null && user?.can("reports.read") == true && analytics.monthlyTrends.isNotEmpty()) {
                     item(key = "revenue_chart") {
@@ -439,7 +450,12 @@ private fun DashboardKpiGrid(
         listOf(
             KpiCardData("Invoiced (incl GST)", "$${analytics.revenueInvoicedInclGst}", false),
             KpiCardData("Payments Received", "$${analytics.paymentsReceived}", false),
-            KpiCardData("Outstanding", "$${analytics.outstandingBalance}", analytics.overdueInvoices > 0),
+            KpiCardData(
+                "Outstanding",
+                "$${analytics.outstandingBalance}",
+                analytics.overdueInvoices > 0,
+                hint = if (analytics.overdueInvoices > 0) "${analytics.overdueInvoices} overdue · $${analytics.overdueBalance}" else null
+            ),
             KpiCardData("Jobs Today", analytics.jobsToday.toString(), false)
         )
     } else {
@@ -455,9 +471,17 @@ private fun DashboardKpiGrid(
         )
     }
 
+    KpiCardGrid(cards)
+}
+
+@Composable
+private fun KpiCardGrid(cards: List<KpiCardData>) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         cards.chunked(2).forEach { rowItems ->
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                Modifier.fillMaxWidth().height(IntrinsicSize.Max),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 rowItems.forEach { card ->
                     Card(
                         colors = CardDefaults.cardColors(
@@ -468,7 +492,7 @@ private fun DashboardKpiGrid(
                             }
                         ),
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f).fillMaxHeight()
                     ) {
                         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text(
@@ -495,6 +519,15 @@ private fun DashboardKpiGrid(
                                     }
                                 }
                             )
+                            if (card.hint != null) {
+                                Text(
+                                    text = card.hint,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
                         }
                     }
                 }
@@ -503,7 +536,58 @@ private fun DashboardKpiGrid(
     }
 }
 
-private data class KpiCardData(val label: String, val value: String, val highlight: Boolean)
+@Composable
+private fun OperationsOverview(operations: OperationsSnapshot, jobsSnapshot: JobsSnapshot?, onOpenDispatch: () -> Unit) {
+    HfSectionCard(title = "Operations") {
+        KpiCardGrid(operationsTiles(operations))
+        val titleOf = { id: String -> jobsSnapshot?.jobs?.firstOrNull { it.id == id }?.title?.ifBlank { null } ?: "Booking" }
+        operations.crewConflicts.take(3).forEach { c ->
+            Text(
+                text = "• ${titleOf(c.jobA)} overlaps ${titleOf(c.jobB)} (${c.reasons.joinToString(" + ")})",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.clickable(onClick = onOpenDispatch)
+            )
+        }
+        if (operations.crewConflicts.size > 3) {
+            Text(
+                text = "+${operations.crewConflicts.size - 3} more conflicts on the Dispatch Board",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        operations.maintenanceDue.take(3).forEach { m ->
+            Text(
+                text = "• ${m.message}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        }
+    }
+}
+
+private fun operationsTiles(o: OperationsSnapshot): List<KpiCardData> = listOf(
+    KpiCardData("Confirmed Today", o.confirmedToday.toString(), false, o.tentativeToday.takeIf { it > 0 }?.let { "+$it tentative" }),
+    KpiCardData("Confirmed Tomorrow", o.confirmedTomorrow.toString(), false, o.tentativeTomorrow.takeIf { it > 0 }?.let { "+$it tentative" }),
+    KpiCardData("Active Jobs", o.activeJobs.toString(), false),
+    KpiCardData(
+        "Unassigned",
+        o.unassignedBookings.toString(),
+        o.unassignedBookings > 0,
+        if (o.unassignedBookings > 0) "${o.unassignedCrew} need crew · ${o.unassignedTruck} need truck" else null
+    ),
+    KpiCardData(
+        "Trucks Available",
+        "${o.trucksAvailableToday} of ${o.trucksTotal}",
+        false,
+        "${o.trucksOnJobsToday} on jobs · ${o.trucksUnavailable} unavailable"
+    ),
+    KpiCardData("Staff Working Today", o.workingStaffToday.toString(), false),
+    KpiCardData("Crew Conflicts", o.crewConflicts.size.toString(), o.crewConflicts.isNotEmpty()),
+    KpiCardData("Maintenance Due", o.maintenanceDue.size.toString(), o.maintenanceDue.isNotEmpty(), "Rego 30d · service 14d")
+)
+
+private data class KpiCardData(val label: String, val value: String, val highlight: Boolean, val hint: String? = null)
 
 @Composable
 private fun RevenueTrendChart(trends: List<MonthlyTrendPoint>) {

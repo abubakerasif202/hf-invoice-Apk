@@ -181,6 +181,71 @@ data class TruckUtilItem(
     val workingMinutes: Int
 )
 
+data class OpsConflict(val jobA: String, val jobB: String, val reasons: List<String>)
+
+data class OpsMaintenanceItem(
+    val vehicleId: String,
+    val vehicleName: String,
+    val kind: String,
+    val dueDate: String?,
+    val message: String
+)
+
+/** Live operational counts computed by the backend (lib/ops-snapshot.ts). Null when the backend predates it. */
+data class OperationsSnapshot(
+    val confirmedToday: Int,
+    val tentativeToday: Int,
+    val confirmedTomorrow: Int,
+    val tentativeTomorrow: Int,
+    val activeJobs: Int,
+    val unassignedBookings: Int,
+    val unassignedCrew: Int,
+    val unassignedTruck: Int,
+    val trucksTotal: Int,
+    val trucksUnavailable: Int,
+    val trucksOnJobsToday: Int,
+    val trucksAvailableToday: Int,
+    val workingStaffToday: Int,
+    val crewConflicts: List<OpsConflict>,
+    val maintenanceDue: List<OpsMaintenanceItem>
+)
+
+internal fun parseOperationsSnapshot(root: JSONObject): OperationsSnapshot? {
+    val o = root.optJSONObject("operations") ?: return null
+    val conflicts = o.optJSONArray("crewConflicts") ?: JSONArray()
+    val maintenance = o.optJSONArray("maintenanceDue") ?: JSONArray()
+    return OperationsSnapshot(
+        confirmedToday = o.optInt("confirmedToday", 0),
+        tentativeToday = o.optInt("tentativeToday", 0),
+        confirmedTomorrow = o.optInt("confirmedTomorrow", 0),
+        tentativeTomorrow = o.optInt("tentativeTomorrow", 0),
+        activeJobs = o.optInt("activeJobs", 0),
+        unassignedBookings = o.optInt("unassignedBookings", 0),
+        unassignedCrew = o.optInt("unassignedCrew", 0),
+        unassignedTruck = o.optInt("unassignedTruck", 0),
+        trucksTotal = o.optInt("trucksTotal", 0),
+        trucksUnavailable = o.optInt("trucksUnavailable", 0),
+        trucksOnJobsToday = o.optInt("trucksOnJobsToday", 0),
+        trucksAvailableToday = o.optInt("trucksAvailableToday", 0),
+        workingStaffToday = o.optInt("workingStaffToday", 0),
+        crewConflicts = List(conflicts.length()) { i ->
+            val c = conflicts.getJSONObject(i)
+            val reasons = c.optJSONArray("reasons") ?: JSONArray()
+            OpsConflict(c.getString("jobA"), c.getString("jobB"), List(reasons.length()) { r -> reasons.getString(r) })
+        },
+        maintenanceDue = List(maintenance.length()) { i ->
+            val m = maintenance.getJSONObject(i)
+            OpsMaintenanceItem(
+                vehicleId = m.getString("vehicleId"),
+                vehicleName = m.getString("vehicleName"),
+                kind = m.getString("kind"),
+                dueDate = if (m.isNull("dueDate")) null else m.optString("dueDate").ifBlank { null },
+                message = m.getString("message")
+            )
+        }
+    )
+}
+
 data class AnalyticsSnapshot(
     val jobsToday: Int,
     val jobsThisWeek: Int,
@@ -198,7 +263,8 @@ data class AnalyticsSnapshot(
     val additionalCharges: String,
     val customerRepeatRate: Double,
     val truckUtilisation: List<TruckUtilItem>,
-    val monthlyTrends: List<MonthlyTrendPoint>
+    val monthlyTrends: List<MonthlyTrendPoint>,
+    val operations: OperationsSnapshot? = null
 )
 
 data class NotificationFeedItem(
@@ -648,7 +714,8 @@ object PlatformRepository {
                 additionalCharges = k.optString("additionalCharges", "0.00"),
                 customerRepeatRate = k.optDouble("customerRepeatRate", 0.0),
                 truckUtilisation = trucks,
-                monthlyTrends = trends
+                monthlyTrends = trends,
+                operations = parseOperationsSnapshot(root)
             )
         }
     }
