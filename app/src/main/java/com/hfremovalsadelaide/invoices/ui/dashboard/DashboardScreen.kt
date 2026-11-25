@@ -45,6 +45,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -59,6 +63,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.hfremovalsadelaide.invoices.R
 import com.hfremovalsadelaide.invoices.data.AnalyticsSnapshot
 import com.hfremovalsadelaide.invoices.data.MonthlyTrendPoint
@@ -470,16 +475,25 @@ private fun DashboardKpiGrid(
                                 text = card.label,
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
+                                minLines = 2,
+                                maxLines = 2,
                                 overflow = TextOverflow.Ellipsis
                             )
+                            // Money values must never be ellipsised: shrink the text instead.
+                            val baseValueStyle = MaterialTheme.typography.titleLarge
+                            var valueStyle by remember(card.value, baseValueStyle) { mutableStateOf(baseValueStyle) }
                             Text(
                                 text = card.value,
-                                style = MaterialTheme.typography.titleLarge,
+                                style = valueStyle,
                                 color = MaterialTheme.colorScheme.primary,
                                 fontWeight = FontWeight.Bold,
                                 maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
+                                softWrap = false,
+                                onTextLayout = { layout ->
+                                    if (layout.hasVisualOverflow && valueStyle.fontSize > 14.sp) {
+                                        valueStyle = valueStyle.copy(fontSize = valueStyle.fontSize * 0.9f)
+                                    }
+                                }
                             )
                         }
                     }

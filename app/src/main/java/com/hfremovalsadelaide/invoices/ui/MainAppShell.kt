@@ -38,6 +38,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -54,6 +55,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -102,6 +107,26 @@ enum class AppDestination(
     INVOICES(R.string.tab_invoices, Icons.AutoMirrored.Filled.ReceiptLong, Icons.AutoMirrored.Outlined.ReceiptLong, "nav_tab_invoices"),
     CUSTOMERS(R.string.tab_customers, Icons.Filled.People, Icons.Outlined.People, "nav_tab_customers"),
     MORE(R.string.tab_more, Icons.Filled.MoreHoriz, Icons.Outlined.MoreHoriz, "nav_tab_more")
+}
+
+private const val NAV_LABEL_MAX_FONT_SCALE = 1.15f
+
+/** Single-line navigation label. Font scale is capped so large accessibility sizes never wrap or clip the bar. */
+@Composable
+private fun NavLabel(text: String) {
+    val density = LocalDensity.current
+    CompositionLocalProvider(
+        LocalDensity provides Density(density.density, fontScale = minOf(density.fontScale, NAV_LABEL_MAX_FONT_SCALE))
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelSmall,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center
+        )
+    }
 }
 
 @Composable
@@ -332,7 +357,8 @@ fun MainAppShell(
                                     currentDestination = destination
                                 },
                                 icon = { Icon(if (selected) destination.selectedIcon else destination.unselectedIcon, contentDescription = null) },
-                                label = { Text(stringResource(id = destination.labelResId), style = MaterialTheme.typography.labelSmall) },
+                                label = { NavLabel(stringResource(id = destination.labelResId)) },
+                                alwaysShowLabel = true,
                                 colors = NavigationRailItemDefaults.colors(
                                     selectedIconColor = MaterialTheme.colorScheme.primary,
                                     selectedTextColor = MaterialTheme.colorScheme.primary,
@@ -366,7 +392,8 @@ fun MainAppShell(
                                         currentDestination = destination
                                     },
                                     icon = { Icon(if (selected) destination.selectedIcon else destination.unselectedIcon, contentDescription = null) },
-                                    label = { Text(stringResource(id = destination.labelResId), style = MaterialTheme.typography.labelSmall) },
+                                    label = { NavLabel(stringResource(id = destination.labelResId)) },
+                                    alwaysShowLabel = true,
                                     colors = NavigationBarItemDefaults.colors(
                                         selectedIconColor = MaterialTheme.colorScheme.primary,
                                         selectedTextColor = MaterialTheme.colorScheme.primary,
