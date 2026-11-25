@@ -3,6 +3,9 @@
     <cache-path
         name="invoice_cache"
         path="invoices/" />
+    <cache-path
+        name="camera_photos"
+        path="camera/" />
     <external-files-path
         name="invoice_downloads"
         path="Download/" />

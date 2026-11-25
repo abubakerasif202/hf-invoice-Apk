@@ -21,6 +21,13 @@ enum class InvoiceStatus(val serverLabel: String) {
     }
 }
 
+data class InvoicePaymentRecord(
+    val amount: String,
+    val date: String,
+    val reference: String,
+    val notes: String
+)
+
 data class InvoiceSummary(
     val id: String,
     val number: String,
@@ -33,7 +40,11 @@ data class InvoiceSummary(
     val totalAmount: BigDecimal,
     val balanceAmount: BigDecimal,
     val gstAmount: BigDecimal,
-    val paidAmount: BigDecimal
+    val paidAmount: BigDecimal,
+    val subtotalAmount: BigDecimal = BigDecimal.ZERO,
+    val payments: List<InvoicePaymentRecord> = emptyList(),
+    val pickup: String = "",
+    val delivery: String = ""
 ) {
     val formattedTotal: String
         get() = formatAud(totalAmount)
@@ -41,8 +52,14 @@ data class InvoiceSummary(
     val formattedBalance: String
         get() = formatAud(balanceAmount)
 
+    val formattedPaid: String
+        get() = formatAud(paidAmount)
+
+    val formattedGst: String
+        get() = formatAud(gstAmount)
+
     companion object {
-        private val audLocale = Locale("en", "AU")
+        private val audLocale = Locale.forLanguageTag("en-AU")
 
         fun formatAud(value: BigDecimal): String {
             val formatter = NumberFormat.getCurrencyInstance(audLocale)
@@ -56,7 +73,9 @@ data class CustomerSummary(
     val name: String,
     val address: String,
     val email: String,
-    val phone: String
+    val phone: String,
+    val kind: String = "Individual",
+    val notes: String = ""
 )
 
 data class WorkspaceCompanyConfig(
@@ -71,6 +90,14 @@ data class InvoicesSnapshot(
     val config: WorkspaceCompanyConfig
 )
 
+data class CreateInvoiceLineItem(
+    val description: String,
+    val quantity: String = "1",
+    val unit: String = "each",
+    val rate: String,
+    val discount: Boolean = false
+)
+
 data class CreateInvoiceRequest(
     val customerId: String? = null,
     val customerName: String,
@@ -79,7 +106,12 @@ data class CreateInvoiceRequest(
     val totalAmount: BigDecimal,
     val issuedDate: String,
     val dueDate: String,
-    val issueImmediately: Boolean
+    val issueImmediately: Boolean,
+    val segment: String = "residential",
+    val rateCardId: String? = null,
+    val pickup: String = "",
+    val delivery: String = "",
+    val extraItems: List<CreateInvoiceLineItem> = emptyList()
 )
 
 sealed interface InvoiceRepositoryResult<out T> {

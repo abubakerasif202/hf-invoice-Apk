@@ -4,13 +4,18 @@ import androidx.annotation.StringRes
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hfremovalsadelaide.invoices.R
+import com.hfremovalsadelaide.invoices.data.CreateInvoiceLineItem
 import com.hfremovalsadelaide.invoices.data.CreateInvoiceRequest
 import com.hfremovalsadelaide.invoices.data.CustomerSummary
 import com.hfremovalsadelaide.invoices.data.InvoiceApiRepository
 import com.hfremovalsadelaide.invoices.data.InvoiceRepositoryResult
 import com.hfremovalsadelaide.invoices.data.InvoiceStatus
 import com.hfremovalsadelaide.invoices.data.InvoiceSummary
+import com.hfremovalsadelaide.invoices.data.PlatformRepository
+import com.hfremovalsadelaide.invoices.data.RateCard
 import com.hfremovalsadelaide.invoices.data.WorkspaceCompanyConfig
+import com.hfremovalsadelaide.invoices.network.ApiResult
+import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -43,11 +48,16 @@ data class CreateInvoiceFormState(
     val selectedCustomerId: String? = null,
     val customerName: String = "",
     val customerAddress: String = "",
+    val pickup: String = "",
+    val delivery: String = "",
     val servicesPerformed: String = "",
     val totalAmount: String = "",
     val issuedDate: String = defaultDateString(offsetDays = 0),
     val dueDate: String = defaultDateString(offsetDays = 7),
     val issueImmediately: Boolean = false,
+    val segment: String = "residential",
+    val rateCardId: String? = null,
+    val extraItems: List<CreateInvoiceLineItem> = emptyList(),
     @StringRes val customerNameError: Int? = null,
     @StringRes val customerAddressError: Int? = null,
     @StringRes val servicesPerformedError: Int? = null,
@@ -76,7 +86,11 @@ data class InvoicesUiState(
     val isRefreshing: Boolean = false,
     val searchQuery: String = "",
     val selectedStatusFilter: InvoiceStatus? = null,
-    val form: CreateInvoiceFormState = CreateInvoiceFormState()
+    val form: CreateInvoiceFormState = CreateInvoiceFormState(),
+    val rateCards: List<RateCard> = emptyList(),
+    val selectedInvoice: InvoiceSummary? = null,
+    val actionBusy: Boolean = false,
+    val actionMessage: String? = null
 ) {
     val allInvoices: List<InvoiceSummary>
         get() = (loadState as? InvoicesLoadState.Loaded)?.invoices.orEmpty()
@@ -129,6 +143,11 @@ class InvoicesViewModel(
     private val _uiState = MutableStateFlow(InvoicesUiState())
     val uiState: StateFlow<InvoicesUiState> = _uiState.asStateFlow()
 
+    fun resetAccountState() {
+        viewModelScope.coroutineContext.cancelChildren()
+        _uiState.value = InvoicesUiState()
+    }
+
     private val _events = MutableSharedFlow<InvoicesEvent>(extraBufferCapacity = 4)
     val events: SharedFlow<InvoicesEvent> = _events.asSharedFlow()
 
@@ -147,16 +166,21 @@ class InvoicesViewModel(
 
             when (val result = repository.fetchInvoices()) {
                 is InvoiceRepositoryResult.Success -> {
-                    _uiState.update {
-                        it.copy(
+                    _uiState.update { state ->
+                        val updatedSelected = state.selectedInvoice?.let { sel ->
+                            result.data.invoices.firstOrNull { it.id == sel.id }
+                        }
+                        state.copy(
                             loadState = InvoicesLoadState.Loaded(
                                 invoices = result.data.invoices,
                                 customers = result.data.customers,
                                 config = result.data.config
                             ),
+                            selectedInvoice = updatedSelected,
                             isRefreshing = false
                         )
                     }
+                    loadRateCards()
                 }
 
                 InvoiceRepositoryResult.AuthRequired -> {
@@ -192,6 +216,74 @@ class InvoicesViewModel(
         }
     }
 
+    fun loadRateCards() {
+        viewModelScope.launch {
+            val res = PlatformRepository.fetchRateCards()
+            if (res is ApiResult.Success) {
+                _uiState.update { it.copy(rateCards = res.data.filter { rc -> rc.active }) }
+            }
+        }
+    }
+
+    fun selectInvoice(invoice: InvoiceSummary?) {
+        _uiState.update { it.copy(selectedInvoice = invoice) }
+    }
+
+    fun consumeActionMessage() {
+        _uiState.update { it.copy(actionMessage = null) }
+    }
+
+    fun recordPayment(invoiceId: String, amount: String, date: String, reference: String, notes: String) {
+        if (amount.isBlank()) {
+            _uiState.update { it.copy(actionMessage = "Enter a valid payment amount.") }
+            return
+        }
+        runInvoiceAction("Payment recorded") {
+            repository.recordPayment(invoiceId, amount.trim(), date.trim(), reference.trim(), notes.trim())
+        }
+    }
+
+    fun markPaid(invoiceId: String, date: String, reference: String) {
+        runInvoiceAction("Invoice marked Paid") {
+            repository.markPaid(invoiceId, date.trim(), reference.trim())
+        }
+    }
+
+    fun voidInvoice(invoiceId: String) {
+        runInvoiceAction("Invoice voided") {
+            repository.voidInvoice(invoiceId)
+        }
+    }
+
+    fun duplicateInvoice(invoiceId: String) {
+        runInvoiceAction("Invoice duplicated as Draft") {
+            repository.duplicateInvoice(invoiceId)
+        }
+    }
+
+    private fun runInvoiceAction(okMsg: String, call: suspend () -> InvoiceRepositoryResult<String>) {
+        if (_uiState.value.actionBusy) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(actionBusy = true) }
+            when (val res = call()) {
+                is InvoiceRepositoryResult.Success -> {
+                    _uiState.update { it.copy(actionBusy = false, actionMessage = okMsg, selectedInvoice = null) }
+                    loadInvoices(isPullRefresh = true)
+                }
+                InvoiceRepositoryResult.AuthRequired -> {
+                    _uiState.update { it.copy(actionBusy = false) }
+                    _events.tryEmit(InvoicesEvent.RequireSignIn)
+                }
+                InvoiceRepositoryResult.NetworkError -> {
+                    _uiState.update { it.copy(actionBusy = false, actionMessage = "No connection. Financial actions require live server verification.") }
+                }
+                is InvoiceRepositoryResult.ServerError -> {
+                    _uiState.update { it.copy(actionBusy = false, actionMessage = res.message ?: "Action failed.") }
+                }
+            }
+        }
+    }
+
     fun onSearchQueryChanged(query: String) {
         _uiState.update { it.copy(searchQuery = query) }
     }
@@ -220,6 +312,7 @@ class InvoicesViewModel(
                         selectedCustomerId = customer.id,
                         customerName = customer.name,
                         customerAddress = customer.address,
+                        segment = if (customer.kind.equals("Business", ignoreCase = true)) "commercial" else state.form.segment,
                         customerNameError = null,
                         customerAddressError = null,
                         submissionError = null,
@@ -227,6 +320,57 @@ class InvoicesViewModel(
                     )
                 )
             }
+        }
+    }
+
+    fun onSegmentChanged(segment: String) {
+        _uiState.update { state ->
+            state.copy(form = state.form.copy(segment = segment, rateCardId = null))
+        }
+    }
+
+    fun onRateCardSelected(rateCard: RateCard?) {
+        _uiState.update { state ->
+            if (rateCard == null) {
+                state.copy(form = state.form.copy(rateCardId = null))
+            } else {
+                val nextServices = state.form.servicesPerformed.ifBlank {
+                    "${rateCard.name} (${rateCard.truckClass}, ${rateCard.movers} movers @ $${rateCard.hourlyRate}/hr)"
+                }
+                state.copy(
+                    form = state.form.copy(
+                        rateCardId = rateCard.id,
+                        segment = rateCard.segment,
+                        servicesPerformed = nextServices,
+                        servicesPerformedError = null
+                    )
+                )
+            }
+        }
+    }
+
+    fun onPickupChanged(value: String) {
+        _uiState.update { state -> state.copy(form = state.form.copy(pickup = value)) }
+    }
+
+    fun onDeliveryChanged(value: String) {
+        _uiState.update { state -> state.copy(form = state.form.copy(delivery = value)) }
+    }
+
+    fun addExtraItem(item: CreateInvoiceLineItem) {
+        if (item.description.isBlank()) return
+        _uiState.update { state ->
+            state.copy(form = state.form.copy(extraItems = state.form.extraItems + item))
+        }
+    }
+
+    fun removeExtraItem(index: Int) {
+        _uiState.update { state ->
+            state.copy(
+                form = state.form.copy(
+                    extraItems = state.form.extraItems.filterIndexed { i, _ -> i != index }
+                )
+            )
         }
     }
 
@@ -363,7 +507,12 @@ class InvoicesViewModel(
             totalAmount = amount,
             issuedDate = form.issuedDate,
             dueDate = form.dueDate,
-            issueImmediately = form.issueImmediately
+            issueImmediately = form.issueImmediately,
+            segment = form.segment,
+            rateCardId = form.rateCardId,
+            pickup = form.pickup.trim(),
+            delivery = form.delivery.trim(),
+            extraItems = form.extraItems
         )
 
         viewModelScope.launch {

@@ -20,7 +20,8 @@ class AppConfigurationTest {
     @Test
     fun verifiesAppNameAndPackageIdentity() {
         val context = ApplicationProvider.getApplicationContext<Context>()
-        assertEquals("com.hfremovalsadelaide.invoices", context.packageName)
+        assertEquals(BuildConfig.APPLICATION_ID, context.packageName)
+        assertTrue(context.packageName in setOf("com.hfremovalsadelaide.invoices", "com.hfremovalsadelaide.invoices.qa"))
         assertEquals("HF Removals Invoices", context.getString(R.string.app_name))
         assertTrue(context.getString(R.string.app_name).length <= 30)
     }

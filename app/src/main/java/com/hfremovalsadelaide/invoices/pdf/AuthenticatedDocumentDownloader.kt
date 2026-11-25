@@ -2,10 +2,12 @@ package com.hfremovalsadelaide.invoices.pdf
 
 import android.content.ContentValues
 import android.content.Context
+import android.content.Intent
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import android.webkit.CookieManager
+import androidx.core.content.FileProvider
 import com.hfremovalsadelaide.invoices.R
 import com.hfremovalsadelaide.invoices.security.TrustedOriginPolicy
 import kotlinx.coroutines.Dispatchers
@@ -49,7 +51,18 @@ class AuthenticatedDocumentDownloader(
         private const val MAX_CACHED_DOCUMENTS = 25
         private const val PUBLIC_SUBFOLDER = "HF Removals Invoices"
         private const val CACHE_DIR_NAME = "invoices"
+        private const val PRIVATE_DIR_NAME = "private"
+        private val cacheLock = Any()
         private val PDF_MAGIC_HEADER = byteArrayOf(0x25, 0x50, 0x44, 0x46, 0x2D) // %PDF-
+
+        fun clearCachedDocuments(context: Context) = synchronized(cacheLock) {
+            val dir = File(context.cacheDir, CACHE_DIR_NAME)
+            dir.walkBottomUp().filter { it.isFile }.forEach {
+                val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", it)
+                context.revokeUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            dir.deleteRecursively()
+        }
     }
 
     override suspend fun download(
@@ -180,12 +193,16 @@ class AuthenticatedDocumentDownloader(
                 requiredExtension = requiredExt
             )
 
+            val isPrivate = TrustedOriginPolicy.isPrivateDocumentUrl(url)
+            val downloadContext = currentCoroutineContext()
             val localFile = try {
-                writePrivateShareCopy(sanitizedName, responseBytes)
+                synchronized(cacheLock) {
+                    downloadContext.ensureActive()
+                    writePrivateShareCopy(sanitizedName, responseBytes, isPrivate)
+                }
             } catch (_: IOException) {
                 return DownloadOutcome.Failure(R.string.download_failed_storage)
             }
-            val isPrivate = TrustedOriginPolicy.isPrivateDocumentUrl(url)
             val savedPublic = !isPrivate && saveToDownloads(sanitizedName, resolvedMime, responseBytes)
 
             pruneOldCacheFiles()
@@ -222,20 +239,24 @@ class AuthenticatedDocumentDownloader(
     override fun listCachedDocuments(): List<DownloadedDocument> {
         val cacheDir = File(context.cacheDir, CACHE_DIR_NAME)
         if (!cacheDir.exists()) return emptyList()
-        return cacheDir.listFiles()
-            ?.filter { it.isFile && (it.name.endsWith(".pdf", true) || it.name.endsWith(".csv", true)) }
-            ?.sortedByDescending { it.lastModified() }
-            ?.map { file ->
+        return cacheDir.walkTopDown().filter {
+            it.isFile && (it.name.endsWith(".pdf", true) || it.name.endsWith(".csv", true))
+        }.sortedByDescending { it.lastModified() }.map { file ->
                 val isPdf = file.name.endsWith(".pdf", true)
+                val isPrivate = file.parentFile?.name == PRIVATE_DIR_NAME ||
+                    file.name.startsWith("HF-Job-Completion-", true) ||
+                    file.name.startsWith("HF-Inventory-", true) ||
+                    file.name.startsWith("HF-Payment-Statement-", true)
                 DownloadedDocument(
                     fileName = file.name,
                     mimeType = if (isPdf) "application/pdf" else "text/csv",
                     localFile = file,
                     sizeBytes = file.length(),
-                    savedToPublicDownloads = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q,
-                    downloadedAtMillis = file.lastModified()
+                    savedToPublicDownloads = !isPrivate && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q,
+                    downloadedAtMillis = file.lastModified(),
+                    isPrivate = isPrivate
                 )
-            } ?: emptyList()
+            }.toList()
     }
 
     private fun hasPdfMagicHeader(bytes: ByteArray): Boolean {
@@ -246,8 +267,9 @@ class AuthenticatedDocumentDownloader(
         return true
     }
 
-    private fun writePrivateShareCopy(fileName: String, bytes: ByteArray): File {
-        val dir = File(context.cacheDir, CACHE_DIR_NAME).apply { mkdirs() }
+    private fun writePrivateShareCopy(fileName: String, bytes: ByteArray, isPrivate: Boolean): File {
+        val cache = File(context.cacheDir, CACHE_DIR_NAME)
+        val dir = (if (isPrivate) File(cache, PRIVATE_DIR_NAME) else cache).apply { mkdirs() }
         val file = File(dir, fileName)
         file.writeBytes(bytes)
         file.setLastModified(System.currentTimeMillis())
@@ -307,7 +329,7 @@ class AuthenticatedDocumentDownloader(
 
     private fun pruneOldCacheFiles() {
         val dir = File(context.cacheDir, CACHE_DIR_NAME)
-        val files = dir.listFiles()?.sortedByDescending { it.lastModified() } ?: return
+        val files = dir.walkTopDown().filter { it.isFile }.sortedByDescending { it.lastModified() }.toList()
         if (files.size > MAX_CACHED_DOCUMENTS) {
             files.drop(MAX_CACHED_DOCUMENTS).forEach { runCatching { it.delete() } }
         }

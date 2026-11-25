@@ -1,0 +1,29 @@
+{
+  "operations": {
+    "confirmedToday": 1,
+    "tentativeToday": 0,
+    "confirmedTomorrow": 1,
+    "tentativeTomorrow": 0,
+    "activeJobs": 1,
+    "unassignedBookings": 1,
+    "unassignedCrew": 1,
+    "unassignedTruck": 1,
+    "trucksTotal": 2,
+    "trucksUnavailable": 0,
+    "trucksOnJobsToday": 1,
+    "trucksAvailableToday": 1,
+    "staffScheduledToday": 1,
+    "staffWorkingNow": 1,
+    "staffOnLeaveToday": 0,
+    "crewConflicts": [],
+    "maintenanceDue": [
+      {
+        "vehicleId": "992140ae-1bca-4691-aee9-051340412186",
+        "vehicleName": "T1",
+        "kind": "rego",
+        "dueDate": "2026-12-10",
+        "message": "T1 rego due 2026-12-10"
+      }
+    ]
+  }
+}

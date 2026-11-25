@@ -1,5 +1,6 @@
 package com.hfremovalsadelaide.invoices.jobs
 
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -37,6 +38,26 @@ class JobsContractTest {
         assertNotNull(done.actualFinish)
         assertEquals(SignoffStatus.NONE, done.signoff)
         assertTrue(done.id in snapshot.awaitingSignoff)
+    }
+
+    @Test
+    fun `crew assignments retain individual account IDs and legacy manual entries`() {
+        val job = JobsApi.parseJob(JSONObject("""
+            {
+              "id":"job-1",
+              "assignees":["Test Driver","Manual Mover"],
+              "staffIds":["staff-1"],
+              "assignmentDetails":[
+                {"staffId":"staff-1","assignee":"Test Driver","role":"driver"},
+                {"staffId":null,"assignee":"Manual Mover","role":"mover"}
+              ]
+            }
+        """.trimIndent()))
+        assertEquals(
+            listOf(JobAssignment("staff-1", "Test Driver", "driver"), JobAssignment(null, "Manual Mover", "mover")),
+            job.assignmentDetails
+        )
+        assertNull(JobsApi.parseJob(JSONObject("""{"id":"job-2","assignees":["Manual Mover"]}""")).assignmentDetails)
     }
 
     @Test

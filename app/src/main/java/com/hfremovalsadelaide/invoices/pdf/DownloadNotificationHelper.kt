@@ -47,7 +47,7 @@ object DownloadNotificationHelper {
     }
 
     fun showDownloadComplete(context: Context, document: DownloadedDocument) {
-        if (!hasNotificationPermission(context)) return
+        if (document.isPrivate || !hasNotificationPermission(context)) return
         ensureChannel(context)
 
         val requestCode = document.fileName.hashCode() and 0x7FFFFFFF
@@ -67,9 +67,7 @@ object DownloadNotificationHelper {
             flags
         )
 
-        val locationLine = if (document.isPrivate) {
-            context.getString(R.string.download_kept_private)
-        } else if (document.savedToPublicDownloads) {
+        val locationLine = if (document.savedToPublicDownloads) {
             context.getString(R.string.download_saved_to_downloads)
         } else {
             context.getString(R.string.download_saved_to_app_storage)
@@ -98,6 +96,12 @@ object DownloadNotificationHelper {
             )
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setPublicVersion(
+                NotificationCompat.Builder(context, CHANNEL_ID)
+                    .setSmallIcon(R.drawable.ic_notification_invoice)
+                    .setContentTitle(context.getString(R.string.notification_download_complete_title))
+                    .build()
+            )
             .build()
 
         val manager = NotificationManagerCompat.from(context)

@@ -13,12 +13,12 @@ Android app for **HF Removals Adelaide**, built with Kotlin, Jetpack Compose and
 
 ## How it works
 
-The app hosts the live invoice website in a hardened WebView inside a branded native shell, with three tabs:
+The native app brings together the dashboard, jobs and dispatch, customers, invoicing, fleet and staff tools. Staff sign in with their own accounts. The backend determines which features and bookings each account can access.
 
-- **Workspace** — the live website (login, customers, invoices, payments, settings).
-- **Invoices** and **New Invoice** — native screens that call the same authenticated backend endpoint (`/api/manage`) using the WebView's session. They show only what the server returns.
+- **Workspace** opens the live website in a hardened WebView using the same session.
+- **Invoices** and **New Invoice** use the authenticated `/api/manage` endpoint to review and manage invoices.
 
-All customer, invoice, payment and GST data stays on the hosted backend. The app has no database of its own, no Firebase/Supabase, and no embedded credentials or API keys.
+The backend is the source of truth for customer, invoice, payment and GST records. An account-scoped, encrypted cache supports offline job access and approved field updates. The app clears private cached data and pending document shares when the active account changes.
 
 ## Downloads, sessions and navigation
 
@@ -63,7 +63,7 @@ Open the folder in Android Studio and let Gradle sync. Always use the wrapper (`
 
 ```powershell
 # Unit tests (JVM, Robolectric)
-.\gradlew.bat :app:testDebugUnitTest
+.\gradlew.bat :app:testQaUnitTest
 
 # Android Lint
 .\gradlew.bat :app:lintDebug
@@ -72,7 +72,7 @@ Open the folder in Android Studio and let Gradle sync. Always use the wrapper (`
 .\gradlew.bat :app:assembleDebug
 
 # Everything CI runs
-.\gradlew.bat :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
+.\gradlew.bat :app:testQaUnitTest :app:lintDebug :app:assembleDebug :app:assembleQa :app:assembleQaAndroidTest
 ```
 
 Debug builds are signed with the standard Android debug key that Gradle creates automatically in `%USERPROFILE%\.android\debug.keystore`. No keystore is needed in the repository.
@@ -93,11 +93,7 @@ Or copy the APK to the phone and open it, allowing *Install unknown apps* for yo
 
 ## Signed releases (APK and AAB)
 
-Never commit a keystore or its passwords. Create a private keystore once and keep a backup outside the repository:
-
-```powershell
-& "$env:JAVA_HOME\bin\keytool.exe" -genkeypair -v -keystore "$env:USERPROFILE\hf-removals-release.jks" -keyalg RSA -keysize 2048 -validity 10000 -alias hf-removals-release
-```
+Use the existing signing key for updates. Keep its backup and credentials outside the repository.
 
 Provide the signing details either through a git-ignored `keystore.properties` in the project root:
 
@@ -131,7 +127,7 @@ Outputs:
 Without signing details, `assembleRelease` produces `app-release-unsigned.apk`, which **cannot be installed** and is not distribution-ready. Verify a signed APK with:
 
 ```powershell
-& "$env:ANDROID_HOME\build-tools\36.0.0\apksigner.bat" verify --verbose app\build\outputs\apk\release\app-release.apk
+& "$env:ANDROID_HOME\build-tools\36.0.0\apksigner.bat" verify --verbose --print-certs app\build\outputs\apk\release\app-release.apk
 ```
 
 Release builds use R8 shrinking and resource shrinking. Keep your keystore: Google Play and in-place updates require the same key every time.
@@ -142,7 +138,7 @@ Edit `versionCode` (must increase with every release) and `versionName` in `app/
 
 ## GitHub Actions
 
-`.github/workflows/android-apk.yml` (actions: `checkout@v7`, `setup-java@v6`, `setup-gradle@v6`, `upload-artifact@v7`, `setup-android@v4`) runs on pushes to `main`, pull requests and manual dispatch. It runs unit tests, lint and `assembleDebug`, verifies the APK is a valid archive, and uploads it as the artifact **HF-Removals-Invoices-Debug-APK** (kept 14 days). On failure it uploads test and lint reports as **build-diagnostics**.
+`.github/workflows/android-apk.yml` runs on pushes to `main`, pull requests and manual dispatch. It runs QA unit tests, debug lint, and builds the debug, QA and QA instrumentation APKs. When signing secrets are available, it also builds and verifies the signed release APK against the existing certificate before uploading **HF-Removals-Invoices-Release-APK** for 14 days. On failure it uploads test and lint reports as **build-diagnostics**.
 
 To download the APK: GitHub → **Actions** → the run → **Artifacts**.
 
@@ -163,7 +159,7 @@ To download the APK: GitHub → **Actions** → the run → **Artifacts**.
 
 ## Tests
 
-`.\gradlew.bat :app:testDebugUnitTest` runs 72 JVM tests, including a contract test against real backend output, (Robolectric, no emulator needed): trusted-origin policy (lookalike hosts, userinfo, backslashes, traversal, restore-URL validation), the downloader against a scripted fake connection (session expiry, redirects, error mapping, progress, size cap, cookie handling, cancellation), ViewModel download state and events, Privacy mode, the adaptive layout (WebView host survives rotation), manifest configuration, and the invoice API parser.
+`.\gradlew.bat :app:testQaUnitTest` runs the JVM suite with Robolectric. It covers trusted-origin policy, authenticated document downloads, role-based navigation, offline operations, jobs, invoice parsing and the adaptive layout. Gradle writes the results to `app/build/reports/tests/testQaUnitTest/index.html`.
 
 ## Jobs tab (Jobs & Dispatch)
 
@@ -175,7 +171,7 @@ A fourth tab shows bookings synchronised by the backend from the HF Google Calen
 - **Sign-off (optional):** after Finish, the customer can sign with a finger and acknowledge the summary (the text states it does not waive rights or approve extra charges), or the driver can Skip with a reason. A skipped job stays "completed, not signed". A completion PDF is available for completed jobs.
 - **Create Invoice From Job:** shows a review of a prefilled draft (working time, break, package rate, warnings) and saves a **draft** only. It never issues an invoice.
 - **Notifications:** per-category toggles (24 h, 1 h, 15 min, start, running late, completed, sign-off pending, rescheduled/cancelled, assignment change). Scheduled with WorkManager, so delivery is not exact-to-the-minute and may be delayed by battery saver. Reminders are de-duplicated by a stable key, survive restarts and reboots, re-check the job state before firing, and never include phone numbers or addresses (private on the lock screen). Tapping one opens the job. No server push is used yet.
-- **Not yet available:** separate driver/subcontractor logins (the app still uses the single administrator session).
+- **Staff access:** invited staff sign in with their own account. Drivers, movers and subcontractors see their assigned bookings. The backend enforces access to dispatch, customer records, invoicing and reporting.
 
 Core library desugaring is enabled so `java.time` works on Android 7.
 ## One signing key for every build (updates install over the app)
@@ -195,13 +191,14 @@ Local and GitHub Actions builds are signed with the **same** key, so a new APK a
 
 **Do not run them on a phone that holds real app data.** During testing on a Huawei VOG-L29 (Android 10) the system uninstall dialog appeared during the run and the installed app was removed, which also deletes its sign-in and settings. The cause was not identified. The Compose flows also failed to start an activity on that handset ("No compose hierarchies found"), while the notification test passed. Also never use `connectedAndroidTest` (it uninstalls the app afterwards).
 
-Use an Android emulator or a spare test device instead:
+Run the QA APK and its separate test package on an isolated Android emulator. Use the serial shown by `adb devices -l`.
 
 ```powershell
-.\gradlew.bat :app:assembleDebug :app:assembleDebugAndroidTest
-adb -s <emulator-or-test-device> install -r app\build\outputs\apk\debug\app-debug.apk
-adb -s <emulator-or-test-device> install -r app\build\outputs\apk\androidTest\debug\app-debug-androidTest.apk
-adb -s <emulator-or-test-device> shell am instrument -w com.hfremovalsadelaide.invoices.test/androidx.test.runner.AndroidJUnitRunner
+.\gradlew.bat :app:assembleQa :app:assembleQaAndroidTest
+adb -s emulator-5562 install -r app\build\outputs\apk\qa\app-qa.apk
+adb -s emulator-5562 install -r app\build\outputs\apk\androidTest\qa\app-qa-androidTest.apk
+adb -s emulator-5562 shell pm grant com.hfremovalsadelaide.invoices.qa android.permission.POST_NOTIFICATIONS
+adb -s emulator-5562 shell am instrument -w com.hfremovalsadelaide.invoices.qa.test/androidx.test.runner.AndroidJUnitRunner
 ```
 
 The same logic is covered on the JVM by the ViewModel, contract, renderer and policy tests that run in every build.
