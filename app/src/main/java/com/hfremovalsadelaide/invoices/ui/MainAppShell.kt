@@ -60,6 +60,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -111,21 +112,29 @@ enum class AppDestination(
 }
 
 private const val NAV_LABEL_MAX_FONT_SCALE = 1.15f
+private const val NAV_LABEL_START_SP = 11f
+private const val NAV_LABEL_MIN_SP = 9f
 
 /** Single-line navigation label. Font scale is capped so large accessibility sizes never wrap or clip the bar. */
 @Composable
 private fun NavLabel(text: String) {
     val density = LocalDensity.current
+    // Shrink to fit (down to a readable floor) rather than ellipsising names like "Dashboard" and "Customers".
+    var size by remember(text) { mutableStateOf(NAV_LABEL_START_SP.sp) }
     CompositionLocalProvider(
         LocalDensity provides Density(density.density, fontScale = minOf(density.fontScale, NAV_LABEL_MAX_FONT_SCALE))
     ) {
         Text(
             text = text,
             style = MaterialTheme.typography.labelSmall,
+            fontSize = size,
             maxLines = 1,
             softWrap = false,
             overflow = TextOverflow.Ellipsis,
-            textAlign = TextAlign.Center
+            textAlign = TextAlign.Center,
+            onTextLayout = { layout ->
+                if (layout.hasVisualOverflow && size.value > NAV_LABEL_MIN_SP) size = (size.value * 0.92f).sp
+            }
         )
     }
 }

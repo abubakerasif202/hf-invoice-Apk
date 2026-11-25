@@ -86,7 +86,8 @@ object DispatchLogic {
             if (missingCrew) add("No crew assigned")
             if (missingTruck) add("No truck assigned")
             if (job.bookingStatus != BookingStatus.CONFIRMED) add("Booking not confirmed")
-            if (job.missingInfo.isNotEmpty()) add("Missing: ${job.missingInfo.joinToString()}")
+            // The card already lists exactly what is missing; repeating it here would show it twice.
+            if (job.missingInfo.isNotEmpty()) add("Details missing")
         }
         return if (medium.isEmpty()) Attention(AttentionLevel.NONE, emptyList()) else Attention(AttentionLevel.MEDIUM, medium)
     }

@@ -102,7 +102,10 @@ class DispatchLogicTest {
         assertEquals(AttentionLevel.MEDIUM, DispatchLogic.attention(unconfirmed, emptySet(), now).level)
 
         val missing = ready.copy(missingInfo = listOf("Customer phone"))
-        assertEquals(AttentionLevel.MEDIUM, DispatchLogic.attention(missing, emptySet(), now).level)
+        val missingAttention = DispatchLogic.attention(missing, emptySet(), now)
+        assertEquals(AttentionLevel.MEDIUM, missingAttention.level)
+        // The card lists exactly what is missing, so the reason must not repeat it.
+        assertEquals(listOf("Details missing"), missingAttention.reasons)
     }
 
     @Test
