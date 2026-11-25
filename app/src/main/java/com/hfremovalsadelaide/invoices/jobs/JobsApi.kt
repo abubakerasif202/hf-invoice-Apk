@@ -132,6 +132,29 @@ object JobsApi : JobsGateway {
             travelNotes = o.optString("travelNotes", ""),
             dispatchNotes = o.optString("dispatchNotes", ""),
             priority = JobPriority.from(o.str("priority")),
+            milestones = o.optJSONObject("milestones")?.let { m ->
+                JobMilestones(
+                    travellingAt = instant(m.str("travellingAt")),
+                    arrivedAt = instant(m.str("arrivedAt")),
+                    travelMinutes = if (m.isNull("travelMinutes")) null else m.optInt("travelMinutes")
+                )
+            },
+            stops = o.optJSONArray("stops")?.let { arr ->
+                List(arr.length()) { i ->
+                    val s = arr.getJSONObject(i)
+                    JobStop(
+                        id = s.getString("id"),
+                        seq = s.optInt("seq", i + 1),
+                        kind = StopKind.from(s.str("kind")),
+                        address = s.optString("address", ""),
+                        contactName = s.optString("contactName", ""),
+                        contactPhone = s.optString("contactPhone", ""),
+                        notes = s.optString("notes", ""),
+                        arrivedAt = instant(s.str("arrivedAt")),
+                        completedAt = instant(s.str("completedAt"))
+                    )
+                }
+            }.orEmpty(),
             missingInfo = o.optJSONArray("missingInfo").strings(),
             waitingMinutes = actual.optInt("waitingMinutes", 0),
             overtimeMinutes = actual.optInt("overtimeMinutes", 0),
@@ -264,6 +287,24 @@ object JobsApi : JobsGateway {
         if (overrideReason != null) body.put("override", JSONObject().put("reason", overrideReason))
         return call("POST", "/api/jobs/$id", body) { JobsResult.Success(it) }
     }
+
+    override suspend fun saveStops(id: String, stops: List<StopDraft>): JobsResult<String> {
+        val arr = JSONArray()
+        stops.forEach { s ->
+            val o = JSONObject()
+                .put("kind", s.kind.server)
+                .put("address", s.address.trim())
+                .put("contactName", s.contactName.trim())
+                .put("contactPhone", s.contactPhone.trim())
+                .put("notes", s.notes.trim())
+            if (s.id != null) o.put("id", s.id)
+            arr.put(o)
+        }
+        return call("POST", "/api/jobs/$id", JSONObject().put("action", "save_stops").put("stops", arr)) { JobsResult.Success(it) }
+    }
+
+    override suspend fun stopEvent(id: String, stopId: String, event: String): JobsResult<String> =
+        call("POST", "/api/jobs/$id", JSONObject().put("action", "stop_$event").put("stopId", stopId)) { JobsResult.Success(it) }
 
     override suspend fun setPriority(id: String, priority: JobPriority): JobsResult<String> =
         call("POST", "/api/jobs/$id", JSONObject().put("action", "set_priority").put("priority", priority.server)) { JobsResult.Success(it) }

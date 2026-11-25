@@ -25,7 +25,8 @@ enum class OfflineOpKind(val serverKind: String) {
     JOB_TIME_ACTION("job_time_action"),
     CONDITION_REPORT("condition_report"),
     INVENTORY_SCAN("inventory_scan"),
-    JOB_PHOTO("job_photo")
+    JOB_PHOTO("job_photo"),
+    STOP_EVENT("stop_event")
 }
 
 enum class QueueOpStatus { PENDING, CONFLICT, REJECTED }

@@ -202,7 +202,9 @@ data class Job(
     val conditionReports: List<ConditionReportItem> = emptyList(),
     val photos: List<JobPhotoMeta> = emptyList(),
     val assignmentDetails: List<JobAssignment>? = null,
-    val priority: JobPriority = JobPriority.NORMAL
+    val priority: JobPriority = JobPriority.NORMAL,
+    val milestones: JobMilestones? = null,
+    val stops: List<JobStop> = emptyList()
 ) {
     val effectiveStart: Instant? get() = appScheduledStart ?: scheduledStart
     val effectiveEnd: Instant? get() = appScheduledEnd ?: scheduledEnd
@@ -267,6 +269,11 @@ interface JobsGateway {
         JobsResult.Failure("Not supported")
 
     suspend fun setPriority(id: String, priority: JobPriority): JobsResult<String> = JobsResult.Failure("Not supported")
+
+    suspend fun saveStops(id: String, stops: List<StopDraft>): JobsResult<String> = JobsResult.Failure("Not supported")
+
+    /** [event] is "arrived" or "completed". */
+    suspend fun stopEvent(id: String, stopId: String, event: String): JobsResult<String> = JobsResult.Failure("Not supported")
 
     suspend fun recordCrewEvent(
         id: String,
