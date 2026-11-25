@@ -205,6 +205,10 @@ fun DashboardScreen(
     onNavigateNewInvoice: () -> Unit,
     onNavigateAnalytics: () -> Unit,
     onNavigateTimesheets: () -> Unit,
+    onViewCalendar: () -> Unit = {},
+    onAddCustomer: () -> Unit = {},
+    onCreateQuotation: () -> Unit = {},
+    onSyncBookings: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val user = platformState.user
@@ -284,8 +288,39 @@ fun DashboardScreen(
                         AssistChip(
                             onClick = onNavigateJobsDispatch,
                             leadingIcon = { Icon(Icons.Rounded.CalendarMonth, contentDescription = null, modifier = Modifier.size(18.dp)) },
-                            label = { Text(if (user?.can("jobs.assign") == true) "Dispatch Board" else "My Schedule") }
+                            label = { Text(if (user?.can("jobs.assign") == true) "Assign Crew" else "My Schedule") },
+                            modifier = Modifier.testTag("quick_action_dispatch")
                         )
+                        if (user != null) {
+                            AssistChip(
+                                onClick = onViewCalendar,
+                                leadingIcon = { Icon(Icons.Rounded.CalendarMonth, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                                label = { Text("Calendar") },
+                                modifier = Modifier.testTag("quick_action_calendar")
+                            )
+                        }
+                        if (user?.can("calendar.sync") == true) {
+                            AssistChip(
+                                onClick = onSyncBookings,
+                                leadingIcon = { Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                                label = { Text("Sync Bookings") },
+                                modifier = Modifier.testTag("quick_action_sync_bookings")
+                            )
+                        }
+                        if (user?.can("crm.manage") == true) {
+                            AssistChip(
+                                onClick = onAddCustomer,
+                                leadingIcon = { Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                                label = { Text("Add Customer") },
+                                modifier = Modifier.testTag("quick_action_add_customer")
+                            )
+                            AssistChip(
+                                onClick = onCreateQuotation,
+                                leadingIcon = { Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                                label = { Text("New Quotation") },
+                                modifier = Modifier.testTag("quick_action_new_quote")
+                            )
+                        }
                         if (user?.can("invoices.manage") == true) {
                             AssistChip(
                                 onClick = onNavigateNewInvoice,

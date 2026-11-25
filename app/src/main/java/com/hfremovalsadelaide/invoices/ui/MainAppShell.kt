@@ -81,6 +81,7 @@ import com.hfremovalsadelaide.invoices.ui.auth.BrandedSignInScreen
 import com.hfremovalsadelaide.invoices.ui.auth.SignInModalSheet
 import com.hfremovalsadelaide.invoices.ui.components.DownloadProgressBanner
 import com.hfremovalsadelaide.invoices.ui.components.SettingsSheet
+import com.hfremovalsadelaide.invoices.ui.customers.CrmLaunchIntent
 import com.hfremovalsadelaide.invoices.ui.customers.CustomersScreen
 import com.hfremovalsadelaide.invoices.ui.dashboard.DashboardScreen
 import com.hfremovalsadelaide.invoices.ui.invoices.CreateInvoiceScreen
@@ -211,6 +212,7 @@ fun MainAppShell(
     var currentDestination by rememberSaveable { mutableStateOf(AppDestination.DASHBOARD) }
     var activeMoreSection by rememberSaveable { mutableStateOf(MoreSection.HUB) }
     var showCreateInvoice by rememberSaveable { mutableStateOf(false) }
+    var crmLaunchIntent by remember { mutableStateOf<CrmLaunchIntent?>(null) }
     var showSettingsSheet by rememberSaveable { mutableStateOf(false) }
     var bypassToWebAuth by rememberSaveable { mutableStateOf(false) }
     var webReloadSignal by remember { mutableIntStateOf(0) }
@@ -491,6 +493,19 @@ fun MainAppShell(
                                     currentDestination = AppDestination.MORE
                                     activeMoreSection = MoreSection.TIMESHEETS
                                 },
+                                onViewCalendar = {
+                                    currentDestination = AppDestination.JOBS
+                                    jobsViewModel.selectView(CalendarView.AGENDA)
+                                },
+                                onAddCustomer = {
+                                    crmLaunchIntent = CrmLaunchIntent.ADD_CUSTOMER
+                                    currentDestination = AppDestination.CUSTOMERS
+                                },
+                                onCreateQuotation = {
+                                    crmLaunchIntent = CrmLaunchIntent.CREATE_QUOTE
+                                    currentDestination = AppDestination.CUSTOMERS
+                                },
+                                onSyncBookings = { jobsViewModel.syncCalendar() },
                                 modifier = Modifier.fillMaxSize()
                             )
 
@@ -557,7 +572,9 @@ fun MainAppShell(
                                 platformViewModel = platformViewModel,
                                 allJobs = jobsState.snapshot?.jobs.orEmpty(),
                                 allInvoices = invoicesState.allInvoices,
-                                modifier = Modifier.fillMaxSize()
+                                modifier = Modifier.fillMaxSize(),
+                                launchIntent = crmLaunchIntent,
+                                onLaunchIntentConsumed = { crmLaunchIntent = null }
                             )
 
                             AppDestination.MORE -> MoreRouterScreen(

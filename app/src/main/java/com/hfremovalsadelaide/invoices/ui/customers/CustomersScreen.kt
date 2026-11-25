@@ -56,6 +56,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -97,6 +98,9 @@ private val QUOTE_STAGES = listOf(
     "Paid"
 )
 
+/** One-shot request from another screen (e.g. dashboard quick actions) to open a CRM dialog on arrival. */
+enum class CrmLaunchIntent { ADD_CUSTOMER, CREATE_QUOTE }
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun CustomersScreen(
@@ -104,7 +108,9 @@ fun CustomersScreen(
     platformViewModel: PlatformViewModel,
     allJobs: List<Job>,
     allInvoices: List<InvoiceSummary>,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    launchIntent: CrmLaunchIntent? = null,
+    onLaunchIntentConsumed: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val crm = platformState.crm
@@ -115,6 +121,21 @@ fun CustomersScreen(
     var selectedCustomer by remember { mutableStateOf<CustomerSummary?>(null) }
     var showCustomerDialog by remember { mutableStateOf(false) }
     var showQuoteDialog by remember { mutableStateOf(false) }
+
+    LaunchedEffect(launchIntent) {
+        when (launchIntent) {
+            CrmLaunchIntent.ADD_CUSTOMER -> {
+                activeTab = CrmTab.DIRECTORY
+                if (canWrite) showCustomerDialog = true
+            }
+            CrmLaunchIntent.CREATE_QUOTE -> {
+                activeTab = CrmTab.QUOTES
+                if (canWrite) showQuoteDialog = true
+            }
+            null -> return@LaunchedEffect
+        }
+        onLaunchIntentConsumed()
+    }
 
     Scaffold(
         modifier = modifier
