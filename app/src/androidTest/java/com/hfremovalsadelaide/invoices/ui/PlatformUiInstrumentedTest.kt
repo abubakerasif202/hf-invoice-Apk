@@ -1,5 +1,13 @@
 package com.hfremovalsadelaide.invoices.ui
 
+import android.graphics.Bitmap
+import android.net.Uri
+import android.util.Base64
+import androidx.activity.compose.LocalActivityResultRegistryOwner
+import androidx.activity.result.ActivityResultRegistry
+import androidx.activity.result.ActivityResultRegistryOwner
+import androidx.activity.result.contract.ActivityResultContract
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.CompositionLocalProvider
@@ -22,7 +30,9 @@ import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
+import androidx.core.app.ActivityOptionsCompat
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import com.hfremovalsadelaide.invoices.auth.SessionUser
 import com.hfremovalsadelaide.invoices.auth.UserRole
 import com.hfremovalsadelaide.invoices.data.AnalyticsSnapshot
@@ -133,17 +143,39 @@ class PlatformUiInstrumentedTest {
     }
 
     @Test
-    fun conditionSheetSavesTheSelectedPhaseAndShowsPrivatePhotoControls() {
+    fun conditionSheetSavesTheSelectedPhaseAndAttachesAPrivatePhoto() {
         var report: ConditionReportItem? = null
+        var uploadedPhoto: Triple<String, String, String>? = null
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val camera = object : ActivityResultRegistryOwner {
+            override val activityResultRegistry = object : ActivityResultRegistry() {
+                override fun <I, O> onLaunch(
+                    requestCode: Int, contract: ActivityResultContract<I, O>, input: I, options: ActivityOptionsCompat?
+                ) {
+                    check(contract is ActivityResultContracts.TakePicture)
+                    val image = Bitmap.createBitmap(16, 16, Bitmap.Config.ARGB_8888)
+                    try {
+                        checkNotNull(context.contentResolver.openOutputStream(input as Uri)).use { output ->
+                            check(image.compress(Bitmap.CompressFormat.JPEG, 85, output))
+                        }
+                    } finally {
+                        image.recycle()
+                    }
+                    dispatchResult(requestCode, true)
+                }
+            }
+        }
         rule.setContent {
-            HFRemovalsTheme {
-                JobConditionSheet(
-                    job = FakeJobsGateway.fixture(),
-                    busy = false,
-                    onSaveConditionReport = { report = it },
-                    onUploadPhoto = { _, _, _ -> },
-                    onDismiss = {}
-                )
+            CompositionLocalProvider(LocalActivityResultRegistryOwner provides camera) {
+                HFRemovalsTheme {
+                    JobConditionSheet(
+                        job = FakeJobsGateway.fixture(),
+                        busy = false,
+                        onSaveConditionReport = { report = it },
+                        onUploadPhoto = { phase, caption, image -> uploadedPhoto = Triple(phase, caption, image) },
+                        onDismiss = {}
+                    )
+                }
             }
         }
         rule.onNodeWithText("During Move").performClick()
@@ -151,14 +183,21 @@ class PlatformUiInstrumentedTest {
         rule.runOnIdle { assertEquals("during", report?.phase) }
         rule.onNodeWithText("Attach Private Job Photo (0 saved)").performScrollTo().assertIsDisplayed()
         rule.onNodeWithText("Gallery").performScrollTo().assertIsDisplayed()
+        rule.onNodeWithText("Camera").performScrollTo().performClick()
+        rule.runOnIdle {
+            val (phase, caption, encoded) = checkNotNull(uploadedPhoto)
+            assertEquals("during", phase)
+            assertEquals("during photo", caption)
+            assertTrue(Base64.decode(encoded, Base64.DEFAULT).take(2) == listOf(0xff.toByte(), 0xd8.toByte()))
+        }
     }
 
     @Test
     fun dashboardRendersInDarkThemeAndLargeFontScaleWithOfflineQueueBanner() {
         val owner = SessionUser(
             id = "u-owner",
-            name = "Abubaker Asif",
-            email = "admin@hfremovalsadelaide.com.au",
+            name = "Test Owner",
+            email = "owner@example.invalid",
             role = UserRole.OWNER,
             isLegacyAdmin = true,
             permissions = setOf("reports.read", "jobs.assign", "invoices.manage")
@@ -258,7 +297,13 @@ class PlatformUiInstrumentedTest {
         rule.onNodeWithText("Operations & Dispatch")
             .assertIsDisplayed()
             .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
-        assertFalse("The subtitle should fit without clipping", layouts.single().hasVisualOverflow)
+        val layout = layouts.single()
+        val lastLine = layout.lineCount - 1
+        assertEquals("The full subtitle should be laid out", "Operations & Dispatch".length, layout.getLineEnd(lastLine))
+        assertFalse("The subtitle should not be ellipsized", layout.isLineEllipsized(lastLine))
+        assertTrue("The subtitle should fit its bounds", (0..lastLine).all { line ->
+            layout.getLineRight(line) <= layout.size.width + 1f && layout.getLineBottom(line) <= layout.size.height + 1f
+        })
         rule.onNodeWithContentDescription("Refresh dashboard").assertIsDisplayed()
         rule.onNodeWithTag("dashboard_notifications_btn").assertIsDisplayed()
         rule.onNodeWithTag("dashboard_settings_btn").assertIsDisplayed()

@@ -75,26 +75,31 @@ jobs:
             echo "No signing secrets available; using the default debug key."
           fi
 
-      - name: Unit tests, lint and debug APK
-        run: ./gradlew --no-daemon :app:testDebugUnitTest :app:lintDebug :app:assembleDebug --stacktrace
+      - name: Unit tests, lint and APK builds
+        run: ./gradlew --no-daemon :app:testQaUnitTest :app:lintDebug :app:assembleDebug :app:assembleQa :app:assembleQaAndroidTest --stacktrace
 
-      - name: Show the APK signing certificate fingerprint
-        run: |
-          apk=$(ls app/build/outputs/apk/debug/*.apk | head -n 1)
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "$apk" | grep -E "SHA-256|Signer #1 certificate DN" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Build signed release APK
+        if: env.HF_RELEASE_STORE_FILE != ''
+        run: ./gradlew --no-daemon :app:assembleRelease --stacktrace
 
-      - name: Verify APK exists and is a valid zip
+      - name: Verify the release APK and signing certificate
+        if: env.HF_RELEASE_STORE_FILE != ''
         run: |
-          apk=$(ls app/build/outputs/apk/debug/*.apk | head -n 1)
+          apk=app/build/outputs/apk/release/app-release.apk
           test -s "$apk"
           unzip -tq "$apk"
+          cert_info=$("$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "$apk")
+          printf '%s\n' "$cert_info" | grep -E 'SHA-256|Signer #1 certificate DN' | tee -a "$GITHUB_STEP_SUMMARY"
+          fingerprint=$(printf '%s\n' "$cert_info" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')
+          test "$fingerprint" = cbf41361728b002f46a4b5b88c368411b86055af9c36acdd4b82f65e0e002d91
           echo "APK: $apk ($(stat -c%s "$apk") bytes)"
 
-      - name: Upload installable debug APK
+      - name: Upload signed release APK
+        if: env.HF_RELEASE_STORE_FILE != ''
         uses: actions/upload-artifact@v7
         with:
-          name: HF-Removals-Invoices-Debug-APK
-          path: app/build/outputs/apk/debug/*.apk
+          name: HF-Removals-Invoices-Release-APK
+          path: app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 14
 

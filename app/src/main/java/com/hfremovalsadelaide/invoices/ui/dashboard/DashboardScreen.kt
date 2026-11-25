@@ -99,7 +99,8 @@ private fun DashboardHeader(
         }
         if (stackActions) {
             Column(horizontalAlignment = Alignment.End) {
-                DashboardIdentity(name, subtitle, Modifier.fillMaxWidth())
+                DashboardIdentity(name, null, Modifier.fillMaxWidth())
+                DashboardSubtitle(subtitle, Modifier.fillMaxWidth())
                 actions()
             }
         } else {
@@ -112,7 +113,7 @@ private fun DashboardHeader(
 }
 
 @Composable
-private fun DashboardIdentity(name: String, subtitle: String, modifier: Modifier) {
+private fun DashboardIdentity(name: String, subtitle: String?, modifier: Modifier) {
     Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
         Surface(
             shape = RoundedCornerShape(10.dp),
@@ -139,13 +140,14 @@ private fun DashboardIdentity(name: String, subtitle: String, modifier: Modifier
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.labelSmall,
-                color = GoldAccent
-            )
+            if (subtitle != null) DashboardSubtitle(subtitle)
         }
     }
+}
+
+@Composable
+private fun DashboardSubtitle(subtitle: String, modifier: Modifier = Modifier) {
+    Text(subtitle, modifier = modifier, style = MaterialTheme.typography.labelSmall, color = GoldAccent)
 }
 
 @Composable
