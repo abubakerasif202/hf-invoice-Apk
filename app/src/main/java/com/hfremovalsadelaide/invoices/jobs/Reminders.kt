@@ -71,7 +71,15 @@ object ReminderText {
     fun publicVersion(category: NotificationCategory) = when (category) {
         NotificationCategory.COMPLETED, NotificationCategory.SIGNOFF_PENDING -> "Job update"
         NotificationCategory.RESCHEDULED_OR_CANCELLED, NotificationCategory.ASSIGNMENT_CHANGED -> "Booking change"
-        else -> "Job reminder"
+        NotificationCategory.JOB_CONFIRMED -> "Booking confirmed"
+        NotificationCategory.TRUCK_UNAVAILABLE -> "Fleet alert"
+        NotificationCategory.INVOICE_OVERDUE -> "Invoice alert"
+        NotificationCategory.TIMESHEET_PENDING -> "Timesheet update"
+        NotificationCategory.UPCOMING_24H,
+        NotificationCategory.UPCOMING_1H,
+        NotificationCategory.STARTING_SOON_15M,
+        NotificationCategory.SCHEDULED_START,
+        NotificationCategory.RUNNING_LATE -> "Job reminder"
     }
 
     fun body(category: NotificationCategory, job: Job): String {
@@ -86,6 +94,10 @@ object ReminderText {
             NotificationCategory.SIGNOFF_PENDING -> "Customer sign-off is still pending"
             NotificationCategory.RESCHEDULED_OR_CANCELLED -> if (job.cancelled) "Booking cancelled in the calendar" else "Booking time changed"
             NotificationCategory.ASSIGNMENT_CHANGED -> "Crew assignment changed"
+            NotificationCategory.JOB_CONFIRMED -> "Booking marked confirmed"
+            NotificationCategory.TRUCK_UNAVAILABLE -> "Assigned vehicle requires attention"
+            NotificationCategory.INVOICE_OVERDUE -> "An invoice requires follow-up"
+            NotificationCategory.TIMESHEET_PENDING -> "Timesheets awaiting review"
         }
     }
 }

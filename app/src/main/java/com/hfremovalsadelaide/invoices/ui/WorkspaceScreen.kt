@@ -519,11 +519,14 @@ fun WorkspaceScreen(
     }
 
     if (showSettingsSheet) {
+        val currentTheme by appSettings.themeMode.collectAsStateWithLifecycle()
         SettingsSheet(
             privacyModeEnabled = privacyModeEnabled,
             onPrivacyModeChange = { appSettings.setPrivacyMode(it) },
             versionName = BuildConfig.VERSION_NAME,
-            onDismiss = { showSettingsSheet = false }
+            onDismiss = { showSettingsSheet = false },
+            themeMode = currentTheme,
+            onThemeModeChange = { appSettings.setThemeMode(it) }
         )
     }
 

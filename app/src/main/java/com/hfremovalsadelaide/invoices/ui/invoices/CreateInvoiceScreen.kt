@@ -13,8 +13,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -28,6 +28,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.DeleteOutline
@@ -35,8 +36,10 @@ import androidx.compose.material.icons.rounded.LocalShipping
 import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.WarningAmber
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
@@ -47,6 +50,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
@@ -73,8 +77,10 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.hfremovalsadelaide.invoices.R
+import com.hfremovalsadelaide.invoices.data.CreateInvoiceLineItem
 import com.hfremovalsadelaide.invoices.data.CustomerSummary
 import com.hfremovalsadelaide.invoices.data.InvoiceSummary
+import com.hfremovalsadelaide.invoices.data.RateCard
 import com.hfremovalsadelaide.invoices.ui.theme.ErrorContainerTint
 import com.hfremovalsadelaide.invoices.ui.theme.ErrorCrimson
 import com.hfremovalsadelaide.invoices.ui.theme.ForestCanopy
@@ -83,19 +89,14 @@ import com.hfremovalsadelaide.invoices.ui.theme.ForestSoftTint
 import com.hfremovalsadelaide.invoices.ui.theme.GoldAccent
 import com.hfremovalsadelaide.invoices.ui.theme.GoldDeep
 import com.hfremovalsadelaide.invoices.ui.theme.GoldSoftTint
-import com.hfremovalsadelaide.invoices.ui.theme.MutedSage
 import com.hfremovalsadelaide.invoices.ui.theme.PureWhite
-import com.hfremovalsadelaide.invoices.ui.theme.SageOutline
-import com.hfremovalsadelaide.invoices.ui.theme.SageSurface
 import java.math.BigDecimal
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
 
-private enum class ActiveDatePicker {
-    NONE, ISSUE, DUE
-}
+private enum class ActiveDatePicker { NONE, ISSUE, DUE }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -114,34 +115,29 @@ fun CreateInvoiceScreen(
     onSubmit: () -> Unit,
     onNavigateBack: () -> Unit,
     onGoToSignIn: () -> Unit,
+    availableRateCards: List<RateCard> = emptyList(),
+    onSegmentChanged: (String) -> Unit = {},
+    onRateCardSelected: (RateCard?) -> Unit = {},
+    onPickupChanged: (String) -> Unit = {},
+    onDeliveryChanged: (String) -> Unit = {},
+    onAddExtraItem: (CreateInvoiceLineItem) -> Unit = {},
+    onRemoveExtraItem: (Int) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    BackHandler {
-        onNavigateBack()
-    }
+    BackHandler { onNavigateBack() }
 
     val focusManager = LocalFocusManager.current
     var activeDatePicker by remember { mutableStateOf(ActiveDatePicker.NONE) }
+    var showAddExtraDialog by remember { mutableStateOf(false) }
 
     Scaffold(
-        modifier = modifier
-            .fillMaxSize()
-            .testTag("create_invoice_screen"),
-        // The shell's NavigationBar already consumes the system navigation-bar inset.
+        modifier = modifier.fillMaxSize().testTag("create_invoice_screen"),
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        containerColor = SageSurface,
-        topBar = {
-            CreateInvoiceTopBar(
-                onBackClick = onNavigateBack,
-                onResetClick = onResetForm
-            )
-        }
+        containerColor = MaterialTheme.colorScheme.background,
+        topBar = { CreateInvoiceTopBar(onBackClick = onNavigateBack, onResetClick = onResetForm) }
     ) { innerPadding ->
         Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .imePadding(),
+            modifier = Modifier.fillMaxSize().padding(innerPadding).imePadding(),
             contentAlignment = Alignment.TopCenter
         ) {
             Column(
@@ -152,8 +148,7 @@ fun CreateInvoiceScreen(
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = 16.dp, vertical = 18.dp)
             ) {
-                val errorText = formState.submissionError
-                    ?: formState.submissionErrorResId?.let { stringResource(id = it) }
+                val errorText = formState.submissionError ?: formState.submissionErrorResId?.let { stringResource(id = it) }
 
                 if (!errorText.isNullOrBlank()) {
                     SubmissionErrorBanner(
@@ -164,30 +159,33 @@ fun CreateInvoiceScreen(
                 }
 
                 // Section 1: Customer Details
-                FormSectionCard(
-                    title = stringResource(id = R.string.create_invoice_section_customer)
-                ) {
+                FormSectionCard(title = stringResource(id = R.string.create_invoice_section_customer)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 10.dp)) {
+                        listOf("residential" to "Residential", "commercial" to "Commercial").forEach { (key, label) ->
+                            FilterChip(
+                                selected = formState.segment == key,
+                                onClick = { onSegmentChanged(key) },
+                                label = { Text(label) }
+                            )
+                        }
+                    }
+
                     if (availableCustomers.isNotEmpty()) {
                         Text(
                             text = stringResource(id = R.string.create_invoice_quick_fill_label),
                             style = MaterialTheme.typography.labelMedium,
-                            color = MutedSage
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Spacer(modifier = Modifier.height(6.dp))
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .horizontalScroll(rememberScrollState())
+                            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
                         ) {
                             FilterChip(
                                 selected = formState.selectedCustomerId == null,
                                 onClick = { onSelectCustomer(null) },
                                 label = { Text(stringResource(id = R.string.create_invoice_new_customer_chip)) },
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = ForestGreen,
-                                    selectedLabelColor = PureWhite
-                                )
+                                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = ForestGreen, selectedLabelColor = PureWhite)
                             )
                             availableCustomers.take(12).forEach { customer ->
                                 val selected = formState.selectedCustomerId == customer.id
@@ -195,10 +193,7 @@ fun CreateInvoiceScreen(
                                     selected = selected,
                                     onClick = { onSelectCustomer(customer) },
                                     label = { Text(customer.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                                    colors = FilterChipDefaults.filterChipColors(
-                                        selectedContainerColor = ForestGreen,
-                                        selectedLabelColor = PureWhite
-                                    )
+                                    colors = FilterChipDefaults.filterChipColors(selectedContainerColor = ForestGreen, selectedLabelColor = PureWhite)
                                 )
                             }
                         }
@@ -210,30 +205,15 @@ fun CreateInvoiceScreen(
                         onValueChange = onCustomerNameChanged,
                         label = { Text(stringResource(id = R.string.field_customer_name)) },
                         placeholder = { Text(stringResource(id = R.string.field_customer_name_hint)) },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Rounded.Person,
-                                contentDescription = null,
-                                tint = ForestGreen
-                            )
-                        },
+                        leadingIcon = { Icon(Icons.Rounded.Person, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
                         isError = formState.customerNameError != null,
-                        supportingText = formState.customerNameError?.let { errId ->
-                            { Text(text = stringResource(id = errId)) }
-                        },
+                        supportingText = formState.customerNameError?.let { { Text(stringResource(id = it)) } },
                         singleLine = true,
-                        keyboardOptions = KeyboardOptions(
-                            capitalization = KeyboardCapitalization.Words,
-                            imeAction = ImeAction.Next
-                        ),
-                        keyboardActions = KeyboardActions(
-                            onNext = { focusManager.moveFocus(FocusDirection.Down) }
-                        ),
+                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words, imeAction = ImeAction.Next),
+                        keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }),
                         shape = MaterialTheme.shapes.medium,
                         colors = hfTextFieldColors(),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("input_customer_name")
+                        modifier = Modifier.fillMaxWidth().testTag("input_customer_name")
                     )
 
                     Spacer(modifier = Modifier.height(12.dp))
@@ -243,62 +223,74 @@ fun CreateInvoiceScreen(
                         onValueChange = onCustomerAddressChanged,
                         label = { Text(stringResource(id = R.string.field_customer_address)) },
                         placeholder = { Text(stringResource(id = R.string.field_customer_address_hint)) },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Rounded.LocationOn,
-                                contentDescription = null,
-                                tint = ForestGreen
-                            )
-                        },
+                        leadingIcon = { Icon(Icons.Rounded.LocationOn, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
                         isError = formState.customerAddressError != null,
-                        supportingText = formState.customerAddressError?.let { errId ->
-                            { Text(text = stringResource(id = errId)) }
-                        },
+                        supportingText = formState.customerAddressError?.let { { Text(stringResource(id = it)) } },
                         minLines = 2,
                         maxLines = 4,
-                        keyboardOptions = KeyboardOptions(
-                            capitalization = KeyboardCapitalization.Sentences,
-                            imeAction = ImeAction.Next
-                        ),
+                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Next),
                         shape = MaterialTheme.shapes.medium,
                         colors = hfTextFieldColors(),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("input_customer_address")
+                        modifier = Modifier.fillMaxWidth().testTag("input_customer_address")
                     )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = formState.pickup,
+                            onValueChange = onPickupChanged,
+                            label = { Text("Pickup (optional)") },
+                            singleLine = true,
+                            colors = hfTextFieldColors(),
+                            modifier = Modifier.weight(1f)
+                        )
+                        OutlinedTextField(
+                            value = formState.delivery,
+                            onValueChange = onDeliveryChanged,
+                            label = { Text("Delivery (optional)") },
+                            singleLine = true,
+                            colors = hfTextFieldColors(),
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
                 }
 
-                // Section 2: Services Performed, Dates & Total Amount
-                FormSectionCard(
-                    title = stringResource(id = R.string.create_invoice_section_service)
-                ) {
+                // Section 2: Services Performed, Rate Cards, Extras, Dates & Total Amount
+                FormSectionCard(title = stringResource(id = R.string.create_invoice_section_service)) {
+                    val segCards = availableRateCards.filter { it.segment.equals(formState.segment, ignoreCase = true) }
+                        .ifEmpty { availableRateCards }
+                    if (segCards.isNotEmpty()) {
+                        Text("Approved rate cards", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+                        ) {
+                            segCards.forEach { rc ->
+                                FilterChip(
+                                    selected = formState.rateCardId == rc.id,
+                                    onClick = { onRateCardSelected(if (formState.rateCardId == rc.id) null else rc) },
+                                    label = { Text("${rc.name} ($${rc.hourlyRate}/hr)") }
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(12.dp))
+                    }
+
                     OutlinedTextField(
                         value = formState.servicesPerformed,
                         onValueChange = onServicesPerformedChanged,
                         label = { Text(stringResource(id = R.string.field_services_performed)) },
                         placeholder = { Text(stringResource(id = R.string.field_services_performed_hint)) },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Rounded.LocalShipping,
-                                contentDescription = null,
-                                tint = ForestGreen
-                            )
-                        },
+                        leadingIcon = { Icon(Icons.Rounded.LocalShipping, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
                         isError = formState.servicesPerformedError != null,
-                        supportingText = formState.servicesPerformedError?.let { errId ->
-                            { Text(text = stringResource(id = errId)) }
-                        },
+                        supportingText = formState.servicesPerformedError?.let { { Text(stringResource(id = it)) } },
                         minLines = 3,
                         maxLines = 5,
-                        keyboardOptions = KeyboardOptions(
-                            capitalization = KeyboardCapitalization.Sentences,
-                            imeAction = ImeAction.Next
-                        ),
+                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Next),
                         shape = MaterialTheme.shapes.medium,
                         colors = hfTextFieldColors(),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("input_services_performed")
+                        modifier = Modifier.fillMaxWidth().testTag("input_services_performed")
                     )
 
                     Spacer(modifier = Modifier.height(12.dp))
@@ -308,140 +300,93 @@ fun CreateInvoiceScreen(
                         onValueChange = onTotalAmountChanged,
                         label = { Text(stringResource(id = R.string.field_total_amount)) },
                         placeholder = { Text(stringResource(id = R.string.field_total_amount_hint)) },
-                        prefix = {
-                            Text(
-                                text = "$ ",
-                                style = MaterialTheme.typography.titleMedium,
-                                color = ForestGreen
-                            )
-                        },
-                        suffix = {
-                            Text(
-                                text = "AUD",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = GoldDeep
-                            )
-                        },
+                        prefix = { Text("$ ", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary) },
+                        suffix = { Text("AUD", style = MaterialTheme.typography.labelMedium, color = GoldDeep) },
                         isError = formState.totalAmountError != null,
-                        supportingText = formState.totalAmountError?.let { errId ->
-                            { Text(text = stringResource(id = errId)) }
-                        },
+                        supportingText = formState.totalAmountError?.let { { Text(stringResource(id = it)) } },
                         singleLine = true,
-                        keyboardOptions = KeyboardOptions(
-                            keyboardType = KeyboardType.Decimal,
-                            imeAction = ImeAction.Done
-                        ),
-                        keyboardActions = KeyboardActions(
-                            onDone = { focusManager.clearFocus() }
-                        ),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
                         shape = MaterialTheme.shapes.medium,
                         colors = hfTextFieldColors(),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("input_total_amount")
+                        modifier = Modifier.fillMaxWidth().testTag("input_total_amount")
                     )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+                    OutlinedButton(onClick = { showAddExtraDialog = true }) {
+                        Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.size(4.dp))
+                        Text("Add packing, heavy item, waiting, travel or discount line")
+                    }
+                    formState.extraItems.forEachIndexed { idx, item ->
+                        Row(
+                            Modifier.fillMaxWidth().padding(top = 6.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                "${item.quantity}x ${item.description} ($${item.rate}${if (item.discount) " discount" else ""})",
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.weight(1f)
+                            )
+                            TextButton(onClick = { onRemoveExtraItem(idx) }) { Text("Remove") }
+                        }
+                    }
 
                     Spacer(modifier = Modifier.height(14.dp))
 
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
                         DateSelectorField(
                             label = stringResource(id = R.string.field_issue_date),
                             isoDate = formState.issuedDate,
                             onClick = { activeDatePicker = ActiveDatePicker.ISSUE },
-                            modifier = Modifier
-                                .weight(1f)
-                                .testTag("input_issue_date")
+                            modifier = Modifier.weight(1f).testTag("input_issue_date")
                         )
-
                         DateSelectorField(
                             label = stringResource(id = R.string.field_due_date),
                             isoDate = formState.dueDate,
                             onClick = { activeDatePicker = ActiveDatePicker.DUE },
-                            modifier = Modifier
-                                .weight(1f)
-                                .testTag("input_due_date")
+                            modifier = Modifier.weight(1f).testTag("input_due_date")
                         )
                     }
                 }
 
                 // Section 3: Draft vs Issue Status
-                FormSectionCard(
-                    title = stringResource(id = R.string.create_invoice_section_status)
-                ) {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
+                FormSectionCard(title = stringResource(id = R.string.create_invoice_section_status)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
                         StatusModeTile(
                             title = stringResource(id = R.string.mode_save_draft),
                             selected = !formState.issueImmediately,
                             onClick = { onIssueImmediatelyChanged(false) },
-                            modifier = Modifier
-                                .weight(1f)
-                                .testTag("mode_draft_chip")
+                            modifier = Modifier.weight(1f).testTag("mode_draft_chip")
                         )
                         StatusModeTile(
                             title = stringResource(id = R.string.mode_issue_invoice),
                             selected = formState.issueImmediately,
                             onClick = { onIssueImmediatelyChanged(true) },
-                            modifier = Modifier
-                                .weight(1f)
-                                .testTag("mode_issue_chip")
+                            modifier = Modifier.weight(1f).testTag("mode_issue_chip")
                         )
                     }
                 }
 
-                // Live Branded Summary Preview
                 InvoiceLiveSummaryCard(formState = formState)
 
                 Button(
-                    onClick = {
-                        focusManager.clearFocus()
-                        onSubmit()
-                    },
+                    onClick = { focusManager.clearFocus(); onSubmit() },
                     enabled = !formState.isSubmitting,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = ForestGreen,
-                        contentColor = PureWhite
-                    ),
+                    colors = ButtonDefaults.buttonColors(containerColor = ForestGreen, contentColor = PureWhite),
                     shape = MaterialTheme.shapes.medium,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 54.dp)
-                        .minimumInteractiveComponentSize()
-                        .testTag("submit_invoice_button")
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp).minimumInteractiveComponentSize().testTag("submit_invoice_button")
                 ) {
                     if (formState.isSubmitting) {
-                        CircularProgressIndicator(
-                            color = GoldAccent,
-                            trackColor = PureWhite.copy(alpha = 0.25f),
-                            strokeWidth = 2.5.dp,
-                            modifier = Modifier.size(20.dp)
-                        )
+                        CircularProgressIndicator(color = GoldAccent, trackColor = PureWhite.copy(alpha = 0.25f), strokeWidth = 2.5.dp, modifier = Modifier.size(20.dp))
                         Spacer(modifier = Modifier.width(10.dp))
-                        Text(
-                            text = stringResource(id = R.string.create_invoice_submitting),
-                            style = MaterialTheme.typography.labelLarge
-                        )
+                        Text(stringResource(id = R.string.create_invoice_submitting), style = MaterialTheme.typography.labelLarge)
                     } else {
-                        Icon(
-                            imageVector = Icons.Rounded.CheckCircle,
-                            contentDescription = null,
-                            tint = GoldAccent,
-                            modifier = Modifier.size(20.dp)
-                        )
+                        Icon(Icons.Rounded.CheckCircle, contentDescription = null, tint = GoldAccent, modifier = Modifier.size(20.dp))
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = stringResource(
-                                id = if (formState.issueImmediately) {
-                                    R.string.create_invoice_submit_issue
-                                } else {
-                                    R.string.create_invoice_submit_draft
-                                }
-                            ),
+                            text = stringResource(id = if (formState.issueImmediately) R.string.create_invoice_submit_issue else R.string.create_invoice_submit_draft),
                             style = MaterialTheme.typography.labelLarge
                         )
                     }
@@ -452,16 +397,49 @@ fun CreateInvoiceScreen(
         }
     }
 
-    if (activeDatePicker != ActiveDatePicker.NONE) {
-        val currentIso = if (activeDatePicker == ActiveDatePicker.ISSUE) {
-            formState.issuedDate
-        } else {
-            formState.dueDate
-        }
-        val datePickerState = rememberDatePickerState(
-            initialSelectedDateMillis = parseIsoToUtcMillis(currentIso)
+    if (showAddExtraDialog) {
+        var desc by remember { mutableStateOf("") }
+        var qty by remember { mutableStateOf("1") }
+        var rate by remember { mutableStateOf("") }
+        var isDiscount by remember { mutableStateOf(false) }
+        AlertDialog(
+            onDismissRequest = { showAddExtraDialog = false },
+            title = { Text("Add Line Charge / Discount") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf("Packing materials", "Heavy item handling", "Waiting time", "Call-out / travel", "Disposal fee")
+                            .forEach { preset ->
+                                FilterChip(selected = desc == preset, onClick = { desc = preset }, label = { Text(preset) })
+                            }
+                    }
+                    OutlinedTextField(desc, { desc = it }, label = { Text("Description") }, singleLine = true)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(qty, { qty = it }, label = { Text("Qty") }, modifier = Modifier.weight(1f), singleLine = true)
+                        OutlinedTextField(rate, { rate = it }, label = { Text("Unit rate AUD") }, modifier = Modifier.weight(2f), singleLine = true)
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = isDiscount, onCheckedChange = { isDiscount = it })
+                        Text("Apply as discount (-)")
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showAddExtraDialog = false
+                        onAddExtraItem(CreateInvoiceLineItem(desc, qty, "each", rate, isDiscount))
+                    },
+                    enabled = desc.isNotBlank() && rate.isNotBlank()
+                ) { Text("Add") }
+            },
+            dismissButton = { TextButton(onClick = { showAddExtraDialog = false }) { Text("Cancel") } }
         )
+    }
 
+    if (activeDatePicker != ActiveDatePicker.NONE) {
+        val currentIso = if (activeDatePicker == ActiveDatePicker.ISSUE) formState.issuedDate else formState.dueDate
+        val datePickerState = rememberDatePickerState(initialSelectedDateMillis = parseIsoToUtcMillis(currentIso))
         DatePickerDialog(
             onDismissRequest = { activeDatePicker = ActiveDatePicker.NONE },
             confirmButton = {
@@ -469,132 +447,54 @@ fun CreateInvoiceScreen(
                     onClick = {
                         datePickerState.selectedDateMillis?.let { millis ->
                             val formatted = formatUtcMillisToIso(millis)
-                            if (activeDatePicker == ActiveDatePicker.ISSUE) {
-                                onIssueDateChanged(formatted)
-                            } else {
-                                onDueDateChanged(formatted)
-                            }
+                            if (activeDatePicker == ActiveDatePicker.ISSUE) onIssueDateChanged(formatted) else onDueDateChanged(formatted)
                         }
                         activeDatePicker = ActiveDatePicker.NONE
                     }
-                ) {
-                    Text(
-                        text = stringResource(id = R.string.action_ok),
-                        color = ForestGreen
-                    )
-                }
+                ) { Text(stringResource(id = R.string.action_ok), color = ForestGreen) }
             },
             dismissButton = {
                 TextButton(onClick = { activeDatePicker = ActiveDatePicker.NONE }) {
-                    Text(
-                        text = stringResource(id = R.string.action_cancel),
-                        color = MutedSage
-                    )
+                    Text(stringResource(id = R.string.action_cancel), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-        ) {
-            DatePicker(state = datePickerState)
-        }
+        ) { DatePicker(state = datePickerState) }
     }
 }
 
 @Composable
-private fun CreateInvoiceTopBar(
-    onBackClick: () -> Unit,
-    onResetClick: () -> Unit
-) {
-    Surface(
-        color = ForestCanopy,
-        contentColor = PureWhite,
-        shadowElevation = 4.dp,
-        modifier = Modifier.fillMaxWidth()
-    ) {
+private fun CreateInvoiceTopBar(onBackClick: () -> Unit, onResetClick: () -> Unit) {
+    Surface(color = ForestCanopy, contentColor = PureWhite, shadowElevation = 4.dp, modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.fillMaxWidth()) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .statusBarsPadding()
-                    .height(60.dp)
-                    .padding(horizontal = 8.dp)
-            ) {
-                IconButton(
-                    onClick = onBackClick,
-                    modifier = Modifier
-                        .minimumInteractiveComponentSize()
-                        .testTag("create_invoice_back_button")
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                        contentDescription = stringResource(id = R.string.nav_back_description),
-                        tint = PureWhite
-                    )
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().statusBarsPadding().height(60.dp).padding(horizontal = 8.dp)) {
+                IconButton(onClick = onBackClick, modifier = Modifier.minimumInteractiveComponentSize().testTag("create_invoice_back_button")) {
+                    Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = stringResource(id = R.string.nav_back_description), tint = PureWhite)
                 }
-
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = stringResource(id = R.string.create_invoice_title),
-                        style = MaterialTheme.typography.titleMedium,
-                        color = PureWhite,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = stringResource(id = R.string.create_invoice_subtitle),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = GoldAccent,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                    Text(stringResource(id = R.string.create_invoice_title), style = MaterialTheme.typography.titleMedium, color = PureWhite, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(stringResource(id = R.string.create_invoice_subtitle), style = MaterialTheme.typography.labelSmall, color = GoldAccent, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-
-                IconButton(
-                    onClick = onResetClick,
-                    modifier = Modifier
-                        .minimumInteractiveComponentSize()
-                        .testTag("create_invoice_reset_button")
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.DeleteOutline,
-                        contentDescription = stringResource(id = R.string.create_invoice_reset),
-                        tint = PureWhite.copy(alpha = 0.9f)
-                    )
+                IconButton(onClick = onResetClick, modifier = Modifier.minimumInteractiveComponentSize().testTag("create_invoice_reset_button")) {
+                    Icon(Icons.Rounded.DeleteOutline, contentDescription = stringResource(id = R.string.create_invoice_reset), tint = PureWhite.copy(alpha = 0.9f))
                 }
             }
-
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(2.5.dp)
-                    .background(GoldAccent.copy(alpha = 0.65f))
-            )
+            Box(Modifier.fillMaxWidth().height(2.5.dp).background(GoldAccent.copy(alpha = 0.65f)))
         }
     }
 }
 
 @Composable
-private fun FormSectionCard(
-    title: String,
-    content: @Composable () -> Unit
-) {
+private fun FormSectionCard(title: String, content: @Composable () -> Unit) {
     Surface(
         shape = MaterialTheme.shapes.large,
-        color = PureWhite,
+        color = MaterialTheme.colorScheme.surface,
         tonalElevation = 1.dp,
         shadowElevation = 1.dp,
-        border = BorderStroke(1.dp, SageOutline),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
         modifier = Modifier.fillMaxWidth()
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(18.dp)
-        ) {
-            Text(
-                text = title.uppercase(),
-                style = MaterialTheme.typography.labelMedium,
-                color = GoldDeep
-            )
+        Column(modifier = Modifier.fillMaxWidth().padding(18.dp)) {
+            Text(title.uppercase(), style = MaterialTheme.typography.labelMedium, color = GoldDeep)
             Spacer(modifier = Modifier.height(12.dp))
             content()
         }
@@ -602,119 +502,53 @@ private fun FormSectionCard(
 }
 
 @Composable
-private fun DateSelectorField(
-    label: String,
-    isoDate: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
+private fun DateSelectorField(label: String, isoDate: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
     Surface(
         shape = MaterialTheme.shapes.medium,
-        color = SageSurface,
-        border = BorderStroke(1.dp, SageOutline),
-        modifier = modifier
-            .minimumInteractiveComponentSize()
-            .clickable(onClick = onClick)
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        modifier = modifier.minimumInteractiveComponentSize().clickable(onClick = onClick)
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Rounded.CalendarMonth,
-                contentDescription = null,
-                tint = ForestGreen,
-                modifier = Modifier.size(18.dp)
-            )
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp)) {
+            Icon(Icons.Rounded.CalendarMonth, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
             Column {
-                Text(
-                    text = label,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MutedSage
-                )
-                Text(
-                    text = isoDate,
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
+                Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(isoDate, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
             }
         }
     }
 }
 
 @Composable
-private fun StatusModeTile(
-    title: String,
-    selected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
+private fun StatusModeTile(title: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
     Surface(
         shape = MaterialTheme.shapes.medium,
-        color = if (selected) ForestSoftTint else SageSurface,
-        border = BorderStroke(
-            width = if (selected) 1.5.dp else 1.dp,
-            color = if (selected) ForestGreen else SageOutline
-        ),
-        modifier = modifier
-            .minimumInteractiveComponentSize()
-            .clickable(onClick = onClick)
+        color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+        border = BorderStroke(width = if (selected) 1.5.dp else 1.dp, color = if (selected) ForestGreen else MaterialTheme.colorScheme.outline),
+        modifier = modifier.minimumInteractiveComponentSize().clickable(onClick = onClick)
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 14.dp)
-        ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.labelLarge,
-                color = if (selected) ForestGreen else MutedSage
-            )
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center, modifier = Modifier.padding(horizontal = 12.dp, vertical = 14.dp)) {
+            Text(title, style = MaterialTheme.typography.labelLarge, color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
 
 @Composable
-private fun InvoiceLiveSummaryCard(
-    formState: CreateInvoiceFormState
-) {
+private fun InvoiceLiveSummaryCard(formState: CreateInvoiceFormState) {
     val displayAmount = InvoiceSummary.formatAud(formState.parsedAmount ?: BigDecimal.ZERO)
-
     Surface(
         shape = MaterialTheme.shapes.medium,
-        color = PureWhite,
+        color = MaterialTheme.colorScheme.surface,
         shadowElevation = 2.dp,
-        border = BorderStroke(1.dp, SageOutline),
-        modifier = Modifier
-            .fillMaxWidth()
-            .testTag("create_invoice_summary_card")
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        modifier = Modifier.fillMaxWidth().testTag("create_invoice_summary_card")
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(5.dp)
-                    .background(ForestGreen)
-            )
-            Column(
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-                modifier = Modifier.padding(16.dp)
-            ) {
-                Row(
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = stringResource(id = R.string.create_invoice_preview_title).uppercase(),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = GoldDeep
-                    )
-                    Surface(
-                        shape = RoundedCornerShape(16.dp),
-                        color = if (formState.issueImmediately) GoldSoftTint else ForestSoftTint
-                    ) {
+            Box(Modifier.fillMaxWidth().height(5.dp).background(ForestGreen))
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(16.dp)) {
+                Row(horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(id = R.string.create_invoice_preview_title).uppercase(), style = MaterialTheme.typography.labelMedium, color = GoldDeep)
+                    Surface(shape = RoundedCornerShape(16.dp), color = if (formState.issueImmediately) GoldSoftTint else ForestSoftTint) {
                         Text(
                             text = if (formState.issueImmediately) "Issued" else "Draft",
                             style = MaterialTheme.typography.labelSmall,
@@ -723,105 +557,41 @@ private fun InvoiceLiveSummaryCard(
                         )
                     }
                 }
-
-                Text(
-                    text = formState.customerName.ifBlank { "Customer name" },
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-
+                Text(formState.customerName.ifBlank { "Customer name" }, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
                 if (formState.customerAddress.isNotBlank()) {
-                    Text(
-                        text = formState.customerAddress,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MutedSage,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                    Text(formState.customerAddress, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
-
                 if (formState.servicesPerformed.isNotBlank()) {
-                    Text(
-                        text = formState.servicesPerformed,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                    Text(formState.servicesPerformed, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
-
-                HorizontalDivider(
-                    color = SageOutline,
-                    modifier = Modifier.padding(vertical = 6.dp)
-                )
-
-                Row(
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = "${formState.issuedDate} · Due ${formState.dueDate}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MutedSage
-                    )
-                    Text(
-                        text = displayAmount,
-                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                        color = ForestCanopy
-                    )
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, modifier = Modifier.padding(vertical = 6.dp))
+                Row(horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Text("${formState.issuedDate} · Due ${formState.dueDate}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(displayAmount, style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface)
                 }
             }
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(3.dp)
-                    .background(GoldAccent)
-            )
+            Box(Modifier.fillMaxWidth().height(3.dp).background(GoldAccent))
         }
     }
 }
 
 @Composable
-private fun SubmissionErrorBanner(
-    message: String,
-    showSignInAction: Boolean,
-    onSignInClick: () -> Unit
-) {
+private fun SubmissionErrorBanner(message: String, showSignInAction: Boolean, onSignInClick: () -> Unit) {
     Surface(
         shape = MaterialTheme.shapes.medium,
         color = ErrorContainerTint,
         border = BorderStroke(1.dp, ErrorCrimson.copy(alpha = 0.35f)),
-        modifier = Modifier
-            .fillMaxWidth()
-            .testTag("create_invoice_error_banner")
+        modifier = Modifier.fillMaxWidth().testTag("create_invoice_error_banner")
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.WarningAmber,
-                    contentDescription = null,
-                    tint = ErrorCrimson,
-                    modifier = Modifier.size(20.dp)
-                )
-                Text(
-                    text = message,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = ErrorCrimson,
-                    modifier = Modifier.weight(1f)
-                )
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Icon(Icons.Rounded.WarningAmber, contentDescription = null, tint = ErrorCrimson, modifier = Modifier.size(20.dp))
+                Text(message, style = MaterialTheme.typography.bodyMedium, color = ErrorCrimson, modifier = Modifier.weight(1f))
             }
             if (showSignInAction) {
                 Spacer(modifier = Modifier.height(8.dp))
                 TextButton(onClick = onSignInClick) {
-                    Text(
-                        text = stringResource(id = R.string.invoices_go_to_sign_in),
-                        color = ForestGreen,
-                        style = MaterialTheme.typography.labelLarge
-                    )
+                    Text(stringResource(id = R.string.invoices_go_to_sign_in), color = ForestGreen, style = MaterialTheme.typography.labelLarge)
                 }
             }
         }
@@ -831,25 +601,19 @@ private fun SubmissionErrorBanner(
 @Composable
 private fun hfTextFieldColors() = OutlinedTextFieldDefaults.colors(
     focusedBorderColor = ForestGreen,
-    unfocusedBorderColor = SageOutline,
-    focusedLabelColor = ForestGreen,
+    unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+    focusedLabelColor = MaterialTheme.colorScheme.primary,
     cursorColor = ForestGreen,
-    focusedContainerColor = PureWhite,
-    unfocusedContainerColor = PureWhite
+    focusedContainerColor = MaterialTheme.colorScheme.surface,
+    unfocusedContainerColor = MaterialTheme.colorScheme.surface
 )
 
-private fun parseIsoToUtcMillis(isoDate: String): Long? {
-    return runCatching {
-        val parser = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply {
-            timeZone = TimeZone.getTimeZone("UTC")
-        }
-        parser.parse(isoDate)?.time
-    }.getOrNull()
-}
+private fun parseIsoToUtcMillis(isoDate: String): Long? = runCatching {
+    val parser = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply { timeZone = TimeZone.getTimeZone("UTC") }
+    parser.parse(isoDate)?.time
+}.getOrNull()
 
 private fun formatUtcMillisToIso(millis: Long): String {
-    val formatter = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply {
-        timeZone = TimeZone.getTimeZone("UTC")
-    }
+    val formatter = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply { timeZone = TimeZone.getTimeZone("UTC") }
     return formatter.format(Date(millis))
 }

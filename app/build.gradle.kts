@@ -36,8 +36,8 @@ android {
         applicationId = "com.hfremovalsadelaide.invoices"
         minSdk = 24
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "2.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -69,6 +69,13 @@ android {
                 signingConfig = signingConfigs.getByName("release")
             }
         }
+        // QA copy of the debug app with its OWN package name (...invoices.qa). Instrumented tests target this copy,
+        // so installing, running or uninstalling them can never touch the real app or its data.
+        create("qa") {
+            initWith(getByName("debug"))
+            applicationIdSuffix = ".qa"
+            matchingFallbacks += listOf("debug")
+        }
         release {
             if (releaseSigning != null) {
                 signingConfig = signingConfigs.getByName("release")
@@ -98,6 +105,8 @@ android {
         getByName("test").kotlin.directories.add("src/sharedTest/java")
         getByName("androidTest").kotlin.directories.add("src/sharedTest/java")
     }
+
+    testBuildType = "qa"
 
     testOptions {
         unitTests {
@@ -129,6 +138,7 @@ dependencies {
     implementation(libs.androidx.swiperefreshlayout)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.androidx.work.runtime.ktx)
+    implementation(libs.zxing.core)
     coreLibraryDesugaring(libs.desugar.jdk.libs)
 
     testImplementation(libs.junit)
@@ -142,4 +152,6 @@ dependencies {
     testImplementation(platform(libs.androidx.compose.bom))
     testImplementation(libs.androidx.compose.ui.test.junit4)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
+    "qaImplementation"(libs.androidx.compose.ui.test.manifest)
+    androidTestImplementation(libs.androidx.work.testing)
 }

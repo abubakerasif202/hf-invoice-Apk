@@ -56,7 +56,9 @@ class InvoiceApiRepository {
                                 name = name,
                                 address = data.optString("address", "").trim(),
                                 email = data.optString("email", "").trim(),
-                                phone = data.optString("phone", "").trim()
+                                phone = data.optString("phone", "").trim(),
+                                kind = data.optString("kind", "Individual").trim(),
+                                notes = data.optString("notes", "").trim()
                             )
                         )
                     }
@@ -82,6 +84,16 @@ class InvoiceApiRepository {
                     val issuedDate = dataObj?.optString("issued", "")?.trim().orEmpty()
                     val dueDate = dataObj?.optString("due", "")?.trim().orEmpty()
                     val description = extractServicesSummary(dataObj)
+                    val payArr = record.optJSONArray("payments") ?: JSONArray()
+                    val payments = List(payArr.length()) { pIdx ->
+                        val p = payArr.getJSONObject(pIdx)
+                        InvoicePaymentRecord(
+                            amount = p.optString("amount", "0.00"),
+                            date = p.optString("date", ""),
+                            reference = p.optString("reference", ""),
+                            notes = p.optString("notes", "")
+                        )
+                    }
 
                     add(
                         InvoiceSummary(
@@ -96,7 +108,11 @@ class InvoiceApiRepository {
                             totalAmount = parseDecimal(totalsObj?.optString("total")),
                             balanceAmount = parseDecimal(totalsObj?.optString("balance")),
                             gstAmount = parseDecimal(totalsObj?.optString("gst")),
-                            paidAmount = parseDecimal(totalsObj?.optString("paid"))
+                            paidAmount = parseDecimal(totalsObj?.optString("paid")),
+                            subtotalAmount = parseDecimal(totalsObj?.optString("subtotal")),
+                            payments = payments,
+                            pickup = dataObj?.optString("pickup", "").orEmpty(),
+                            delivery = dataObj?.optString("delivery", "").orEmpty()
                         )
                     )
                 }
@@ -124,14 +140,35 @@ class InvoiceApiRepository {
                 .setScale(2, RoundingMode.HALF_UP)
                 .toPlainString()
 
-            val itemObj = JSONObject().apply {
-                put("description", request.servicesPerformed.trim())
-                put("quantity", "1")
-                put("unit", "job")
-                put("rate", formattedRate)
-                put("tax", config.defaultTax.ifBlank { "none" })
-                put("discount", false)
-                put("note", "")
+            val taxMode = config.defaultTax.ifBlank { "none" }
+            val itemsArray = JSONArray()
+            if (request.totalAmount > BigDecimal.ZERO) {
+                itemsArray.put(
+                    JSONObject().apply {
+                        put("description", request.servicesPerformed.trim())
+                        put("quantity", "1")
+                        put("unit", "job")
+                        put("rate", formattedRate)
+                        put("tax", taxMode)
+                        put("discount", false)
+                        put("note", "")
+                    }
+                )
+            }
+            request.extraItems.forEach { extra ->
+                if (extra.description.isNotBlank()) {
+                    itemsArray.put(
+                        JSONObject().apply {
+                            put("description", extra.description.trim())
+                            put("quantity", extra.quantity.ifBlank { "1" })
+                            put("unit", extra.unit.ifBlank { "each" })
+                            put("rate", extra.rate.ifBlank { "0" })
+                            put("tax", taxMode)
+                            put("discount", extra.discount)
+                            put("note", "")
+                        }
+                    )
+                }
             }
 
             val invoiceData = JSONObject().apply {
@@ -142,20 +179,22 @@ class InvoiceApiRepository {
                 put("serviceFrom", request.issuedDate)
                 put("serviceTo", request.issuedDate)
                 put("job", "")
-                put("pickup", request.customerAddress.trim())
-                put("delivery", "")
+                put("pickup", request.pickup.ifBlank { request.customerAddress }.trim())
+                put("delivery", request.delivery.trim())
                 put("description", request.servicesPerformed.trim())
                 put("terms", config.terms)
                 put("notes", "")
                 put("internal", "")
+                put("segment", request.segment)
+                if (!request.rateCardId.isNullOrBlank()) put("rateCardId", request.rateCardId)
                 put("days", JSONArray())
-                put("items", JSONArray().put(itemObj))
+                put("items", itemsArray)
 
                 if (request.customerId.isNullOrBlank()) {
                     put(
                         "newCustomer",
                         JSONObject().apply {
-                            put("kind", "Individual")
+                            put("kind", if (request.segment == "commercial") "Business" else "Individual")
                             put("name", request.customerName.trim())
                             put("contact", "")
                             put("email", "")
@@ -266,72 +305,106 @@ class InvoiceApiRepository {
     suspend fun createInvoice(
         request: CreateInvoiceRequest,
         config: WorkspaceCompanyConfig
-    ): InvoiceRepositoryResult<String> = withContext(Dispatchers.IO) {
-        if (!TrustedOriginPolicy.isTrustedOrigin(MANAGE_ENDPOINT)) {
-            return@withContext InvoiceRepositoryResult.NetworkError
-        }
+    ): InvoiceRepositoryResult<String> = postManagePayload(buildCreateInvoicePayload(request, config))
 
-        var connection: HttpsURLConnection? = null
-        try {
-            val cookie = CookieManager.getInstance().getCookie(MANAGE_ENDPOINT)
-            if (cookie.isNullOrBlank()) {
-                return@withContext InvoiceRepositoryResult.AuthRequired
-            }
+    suspend fun recordPayment(
+        invoiceId: String,
+        amount: String,
+        date: String,
+        reference: String,
+        notes: String
+    ): InvoiceRepositoryResult<String> = postManagePayload(
+        JSONObject()
+            .put("action", "payment")
+            .put("id", invoiceId)
+            .put(
+                "data",
+                JSONObject()
+                    .put("amount", amount)
+                    .put("date", date)
+                    .put("reference", reference)
+                    .put("notes", notes)
+            )
+    )
 
-            val payloadBytes = buildCreateInvoicePayload(request, config)
-                .toString()
-                .toByteArray(StandardCharsets.UTF_8)
+    suspend fun markPaid(invoiceId: String, date: String, reference: String): InvoiceRepositoryResult<String> =
+        postManagePayload(
+            JSONObject()
+                .put("action", "paid")
+                .put("id", invoiceId)
+                .put("data", JSONObject().put("date", date).put("reference", reference).put("notes", ""))
+        )
 
-            val rawConn = URL(MANAGE_ENDPOINT).openConnection()
-            if (rawConn !is HttpsURLConnection) {
+    suspend fun voidInvoice(invoiceId: String): InvoiceRepositoryResult<String> =
+        postManagePayload(JSONObject().put("action", "void").put("id", invoiceId))
+
+    suspend fun duplicateInvoice(invoiceId: String): InvoiceRepositoryResult<String> =
+        postManagePayload(JSONObject().put("action", "duplicate").put("id", invoiceId))
+
+    private suspend fun postManagePayload(payload: JSONObject): InvoiceRepositoryResult<String> =
+        withContext(Dispatchers.IO) {
+            if (!TrustedOriginPolicy.isTrustedOrigin(MANAGE_ENDPOINT)) {
                 return@withContext InvoiceRepositoryResult.NetworkError
             }
 
-            connection = rawConn.apply {
-                requestMethod = "POST"
-                connectTimeout = CONNECT_TIMEOUT_MS
-                readTimeout = READ_TIMEOUT_MS
-                instanceFollowRedirects = false
-                useCaches = false
-                doOutput = true
-                setRequestProperty("Content-Type", "application/json; charset=utf-8")
-                setRequestProperty("Accept", "application/json")
-                setRequestProperty("Cookie", cookie)
-                // The backend rejects state-changing requests that lack its own Origin.
-                setRequestProperty("Origin", TrustedOriginPolicy.PRODUCTION_URL)
-                setFixedLengthStreamingMode(payloadBytes.size)
-            }
-
-            connection.outputStream.use { out ->
-                out.write(payloadBytes)
-                out.flush()
-            }
-
-            val code = connection.responseCode
-            when {
-                code == HttpURLConnection.HTTP_UNAUTHORIZED ||
-                    code == HttpURLConnection.HTTP_FORBIDDEN -> {
-                    InvoiceRepositoryResult.AuthRequired
+            var connection: HttpsURLConnection? = null
+            try {
+                val cookie = CookieManager.getInstance().getCookie(MANAGE_ENDPOINT)
+                if (cookie.isNullOrBlank()) {
+                    return@withContext InvoiceRepositoryResult.AuthRequired
                 }
 
-                code in 200..299 -> {
-                    val body = readStreamText(connection.inputStream)
-                    val id = runCatching { JSONObject(body).optString("id", "") }.getOrDefault("")
-                    InvoiceRepositoryResult.Success(id)
+                val payloadBytes = payload.toString().toByteArray(StandardCharsets.UTF_8)
+
+                val rawConn = URL(MANAGE_ENDPOINT).openConnection()
+                if (rawConn !is HttpsURLConnection) {
+                    return@withContext InvoiceRepositoryResult.NetworkError
                 }
 
-                else -> {
-                    val errBody = connection.errorStream?.let { readStreamText(it) }
-                    val errMsg = extractErrorMessage(errBody)
-                    InvoiceRepositoryResult.ServerError(errMsg)
+                connection = rawConn.apply {
+                    requestMethod = "POST"
+                    connectTimeout = CONNECT_TIMEOUT_MS
+                    readTimeout = READ_TIMEOUT_MS
+                    instanceFollowRedirects = false
+                    useCaches = false
+                    doOutput = true
+                    setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                    setRequestProperty("Accept", "application/json")
+                    setRequestProperty("Cookie", cookie)
+                    setRequestProperty("Origin", TrustedOriginPolicy.PRODUCTION_URL)
+                    setFixedLengthStreamingMode(payloadBytes.size)
                 }
+
+                connection.outputStream.use { out ->
+                    out.write(payloadBytes)
+                    out.flush()
+                }
+
+                val code = connection.responseCode
+                when {
+                    code == HttpURLConnection.HTTP_UNAUTHORIZED ||
+                        code == HttpURLConnection.HTTP_FORBIDDEN -> {
+                        InvoiceRepositoryResult.AuthRequired
+                    }
+
+                    code in 200..299 -> {
+                        val body = readStreamText(connection.inputStream)
+                        val id = runCatching { JSONObject(body).optString("id", "") }.getOrDefault("")
+                        InvoiceRepositoryResult.Success(id)
+                    }
+
+                    else -> {
+                        val errBody = connection.errorStream?.let { readStreamText(it) }
+                        val errMsg = extractErrorMessage(errBody)
+                        InvoiceRepositoryResult.ServerError(errMsg)
+                    }
+                }
+            } catch (_: Exception) {
+                InvoiceRepositoryResult.NetworkError
+            } finally {
+                connection?.disconnect()
             }
-        } catch (_: Exception) {
-            InvoiceRepositoryResult.NetworkError
-        } finally {
-            connection?.disconnect()
         }
-    }
 
     private fun readStreamText(stream: java.io.InputStream): String {
         return BufferedReader(InputStreamReader(stream, StandardCharsets.UTF_8)).use { it.readText() }

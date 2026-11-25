@@ -332,6 +332,14 @@ class WorkspaceViewModel @JvmOverloads constructor(
         _events.tryEmit(WorkspaceEvent.ShowMessage(R.string.download_cancelled))
     }
 
+    fun resetAccountState() {
+        downloadJob?.cancel()
+        downloadJob = null
+        dismissJsDialog(confirmed = false)
+        AuthenticatedDocumentDownloader.clearCachedDocuments(getApplication())
+        _uiState.value = WorkspaceUiState(isOnline = _uiState.value.isOnline)
+    }
+
     fun dismissActiveDocument() {
         _uiState.update { it.copy(activeDocument = null) }
     }

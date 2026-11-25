@@ -1,32 +1,29 @@
 package com.hfremovalsadelaide.invoices.jobs
 
-import android.app.NotificationManager
-import android.content.Context
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
-import androidx.compose.ui.test.onLast
+import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
-import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
-import androidx.compose.ui.test.swipe
 import androidx.compose.ui.geometry.Offset
-import androidx.test.core.app.ApplicationProvider
+import androidx.compose.ui.test.swipe
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.hfremovalsadelaide.invoices.ui.jobs.JobsTab
 import com.hfremovalsadelaide.invoices.ui.theme.HFRemovalsTheme
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
-import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -48,7 +45,13 @@ abstract class JobsFlowBase {
         rule.setContent {
             HFRemovalsTheme {
                 val state by vm.state.collectAsState()
-                JobsTab(state = state, viewModel = vm, onGoToSignIn = {}, onDownloadCompletionPdf = { pdfRequests += it })
+                JobsTab(
+                    state = state,
+                    viewModel = vm,
+                    onGoToSignIn = {},
+                    onDownloadCompletionPdf = { pdfRequests += it },
+                    permissions = setOf("jobs.read", "jobs.act", "jobs.signoff", "invoice.draft", "invoices.manage")
+                )
             }
         }
         vm.load()
@@ -56,18 +59,32 @@ abstract class JobsFlowBase {
     }
 
     private fun waitForTag(tag: String) = rule.waitUntil(5_000) {
-        rule.onAllNodesWithTagCount(tag) > 0
+        rule.onAllNodes(hasTestTag(tag)).fetchSemanticsNodes().isNotEmpty()
     }
 
-    private fun androidx.compose.ui.test.junit4.ComposeContentTestRule.onAllNodesWithTagCount(tag: String) =
-        onAllNodes(androidx.compose.ui.test.hasTestTag(tag)).fetchSemanticsNodes().size
+    private fun finishJob() {
+        rule.onNodeWithTag("job_finish").performScrollTo().performClick()
+        waitForTag("job_finish_confirm")
+        rule.onNodeWithTag("job_finish_confirm").performClick()
+    }
+
+    private fun waitForBreakAction(label: String) {
+        val action = hasTestTag("job_pause_resume") and hasText(label) and isEnabled()
+        rule.waitUntil(5_000) { rule.onAllNodes(action).fetchSemanticsNodes().isNotEmpty() }
+    }
+
+    private fun toggleBreak(label: String) {
+        waitForBreakAction(label)
+        rule.onNodeWithTag("job_pause_resume").performScrollTo().performClick()
+    }
 
     private fun openFixture(fake: FakeJobsGateway) {
         launch(fake)
         waitForTag("jobs_list")
         // The list is lazy: scroll to the booking the way a user would before tapping it.
-        rule.onNodeWithTag("jobs_list").performScrollToNode(androidx.compose.ui.test.hasTestTag("job_card_fixture-1"))
+        rule.onNodeWithTag("jobs_list").performScrollToNode(hasTestTag("job_card_fixture-1"))
         rule.onNodeWithTag("job_card_fixture-1").performClick()
+        rule.waitUntil(5_000) { rule.onAllNodesWithText("Scheduled (from calendar)").fetchSemanticsNodes().isNotEmpty() }
     }
 
     @Test
@@ -75,7 +92,7 @@ abstract class JobsFlowBase {
         openFixture(FakeJobsGateway(listOf(FakeJobsGateway.fixture())))
         rule.onNodeWithText("Scheduled (from calendar)").assertExists()
         rule.onNodeWithText("Actual (recorded)").assertExists()
-        rule.onNodeWithText("Not provided", substring = true).assertExists() // nothing recorded yet, never invented
+        rule.onAllNodesWithText("Not provided", substring = true).onFirst().assertExists() // nothing recorded yet, never invented
         rule.onNodeWithTag("job_call").assertExists()
         rule.onNodeWithTag("job_start").assertIsEnabled()
     }
@@ -85,14 +102,10 @@ abstract class JobsFlowBase {
         val fake = FakeJobsGateway(listOf(FakeJobsGateway.fixture()))
         openFixture(fake)
         rule.onNodeWithTag("job_start").performClick()
-        waitForTag("job_pause_resume")
-        rule.onNodeWithTag("job_pause_resume").performClick()
-        rule.waitUntil(5_000) { rule.onAllNodesWithText("Resume").fetchSemanticsNodes().isNotEmpty() }
-        rule.onNodeWithTag("job_pause_resume").performClick()
-        rule.waitUntil(5_000) { rule.onAllNodesWithText("Pause (break)").fetchSemanticsNodes().isNotEmpty() }
-        rule.onNodeWithTag("job_finish").performClick()
-        rule.onNodeWithText("Finish this job?").assertExists()
-        rule.onAllNodesWithText("Finish Job").onLast().performClick()
+        toggleBreak("Pause (break)")
+        toggleBreak("Resume")
+        waitForBreakAction("Pause (break)")
+        finishJob()
         waitForTag("signoff_logo") // the HF logo is shown on the completion & sign-off screen
         assertEquals(listOf("act:start", "act:pause", "act:resume", "act:finish"), fake.calls.filter { it.startsWith("act:") })
     }
@@ -101,17 +114,16 @@ abstract class JobsFlowBase {
     fun signatureCanBeDrawnClearedAndSavedAndNeedsAcknowledgement() {
         val fake = FakeJobsGateway(listOf(FakeJobsGateway.fixture(JobState.IN_PROGRESS)))
         openFixture(fake)
-        rule.onNodeWithTag("job_finish").performClick()
-        rule.onAllNodesWithText("Finish Job").onLast().performClick()
+        finishJob()
         waitForTag("signature_canvas")
         rule.onNodeWithTag("signoff_confirm").assertIsNotEnabled() // nothing drawn or acknowledged yet
-        rule.onNodeWithTag("signature_canvas").performTouchInput { swipe(Offset(30f, 40f), Offset(300f, 120f), 300) }
+        rule.onNodeWithTag("signature_canvas").performTouchInput { swipe(Offset(width * 0.15f, height * 0.35f), Offset(width * 0.85f, height * 0.65f), 300) }
         rule.onNodeWithTag("signature_clear").performClick()
-        rule.onNodeWithTag("signoff_ack").performClick()
-        rule.onNodeWithTag("signoff_confirm").assertIsNotEnabled() // cleared, so still no signature
-        rule.onNodeWithTag("signature_canvas").performTouchInput { swipe(Offset(30f, 60f), Offset(320f, 100f), 300) }
-        rule.onNodeWithTag("signoff_confirm").assertIsEnabled()
-        rule.onNodeWithTag("signoff_confirm").performClick()
+        rule.onNodeWithTag("signoff_ack").performScrollTo().performClick()
+        rule.onNodeWithTag("signoff_confirm").performScrollTo().assertIsNotEnabled() // cleared, so still no signature
+        rule.onNodeWithTag("signature_canvas").performScrollTo().performTouchInput { swipe(Offset(width * 0.15f, height * 0.35f), Offset(width * 0.85f, height * 0.65f), 300) }
+        rule.onNodeWithTag("signoff_confirm").performScrollTo().assertIsEnabled()
+        rule.onNodeWithTag("signoff_confirm").performScrollTo().performClick()
         rule.waitUntil(5_000) { fake.calls.contains("signoff") }
         assertEquals("Test Customer", fake.lastSignoffName)
         assertTrue("signature is a PNG", fake.lastSignature.orEmpty().startsWith("iVBOR"))
@@ -121,11 +133,10 @@ abstract class JobsFlowBase {
     fun skippingSignoffRecordsTheReasonAndKeepsTheJobCompleted() {
         val fake = FakeJobsGateway(listOf(FakeJobsGateway.fixture(JobState.IN_PROGRESS)))
         openFixture(fake)
-        rule.onNodeWithTag("job_finish").performClick()
-        rule.onAllNodesWithText("Finish Job").onLast().performClick()
+        finishJob()
         waitForTag("signoff_skip")
-        rule.onNodeWithTag("signoff_skip").performClick()
-        rule.onNodeWithTag("signoff_skip_confirm").performClick()
+        rule.onNodeWithTag("signoff_skip").performScrollTo().performClick()
+        rule.onNodeWithTag("signoff_skip_confirm").performScrollTo().performClick()
         rule.waitUntil(5_000) { fake.calls.contains("skip") }
         assertEquals("Customer Unavailable", fake.lastSkipReason)
     }
@@ -134,14 +145,14 @@ abstract class JobsFlowBase {
     fun completedJobCanRequestPdfAndOnlyASavedDraftInvoice() {
         val fake = FakeJobsGateway(listOf(FakeJobsGateway.fixture(JobState.IN_PROGRESS)))
         openFixture(fake)
-        rule.onNodeWithTag("job_finish").performClick()
-        rule.onAllNodesWithText("Finish Job").onLast().performClick()
+        finishJob()
         waitForTag("signoff_later")
-        rule.onNodeWithTag("signoff_later").performClick()
+        rule.onNodeWithTag("signoff_later").performScrollTo().performClick()
         waitForTag("job_pdf")
         rule.onNodeWithTag("job_pdf").performClick()
         assertEquals(listOf("fixture-1"), pdfRequests)
         rule.onNodeWithTag("job_create_invoice").performClick()
+        waitForTag("draft_confirm")
         rule.onNodeWithText("Review draft invoice").assertExists()
         rule.onNode(hasText("No matching truck package", substring = true)).assertExists()
         assertTrue("reviewing must not save anything", fake.savedDrafts.isEmpty())

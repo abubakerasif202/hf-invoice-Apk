@@ -47,11 +47,16 @@ object TrustedOriginPolicy {
     }
 
     private val COMPLETION_PDF_PATH = Regex("^/api/jobs/[0-9a-fA-F-]{36}/completion-pdf$")
+    private val INVENTORY_PDF_PATH = Regex("^/api/jobs/[0-9a-fA-F-]{36}/inventory$")
+    private val STATEMENT_PDF_PATH = Regex("^/api/timesheets/statements/[0-9a-fA-F-]{36}/pdf$")
 
-    /** Job completion PDFs can carry a customer's signature, so they are never auto-saved to shared storage. */
+    /** Signed completion PDFs, inventory schedules, and pay statements stay in private storage unless explicitly shared. */
     fun isPrivateDocumentUrl(url: String?): Boolean {
         if (!isTrustedOrigin(url)) return false
-        return COMPLETION_PDF_PATH.matches(Uri.parse(url).encodedPath.orEmpty())
+        val path = Uri.parse(url).encodedPath.orEmpty()
+        return COMPLETION_PDF_PATH.matches(path) ||
+            INVENTORY_PDF_PATH.matches(path) ||
+            STATEMENT_PDF_PATH.matches(path)
     }
 
     fun isTrustedOrigin(uri: Uri?): Boolean {

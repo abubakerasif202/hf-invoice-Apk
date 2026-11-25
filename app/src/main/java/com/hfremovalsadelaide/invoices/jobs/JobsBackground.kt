@@ -1,6 +1,7 @@
 package com.hfremovalsadelaide.invoices.jobs
 
 import android.content.Context
+import androidx.core.app.NotificationManagerCompat
 import androidx.work.BackoffPolicy
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
@@ -12,6 +13,8 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
+import com.hfremovalsadelaide.invoices.auth.AuthRepository
+import com.hfremovalsadelaide.invoices.offline.EncryptedStore
 import org.json.JSONObject
 import java.time.Duration
 import java.time.Instant
@@ -31,6 +34,15 @@ object JobsBackground {
     private const val PERIODIC = "hf_jobs_refresh"
 
     private fun prefs(c: Context) = c.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+
+    @Synchronized
+    fun clearAccountState(c: Context) {
+        val p = prefs(c)
+        val wm = WorkManager.getInstance(c)
+        p.getStringSet(KEY_SCHEDULED, emptySet()).orEmpty().forEach { wm.cancelUniqueWork(it) }
+        p.edit().clear().apply()
+        NotificationManagerCompat.from(c).cancelAll()
+    }
 
     fun enabled(c: Context): Map<NotificationCategory, Boolean> {
         val raw = prefs(c).getString(KEY_ENABLED, null)
@@ -53,6 +65,7 @@ object JobsBackground {
     }
 
     /** Detects calendar/assignment/completion changes, then (re)plans the future reminders. */
+    @Synchronized
     fun onSnapshot(c: Context, snapshot: JobsSnapshot, now: Instant = Instant.now()) {
         val p = prefs(c)
         val enabled = enabled(c)
@@ -111,10 +124,19 @@ object JobsBackground {
 }
 
 class RefreshWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
-    override suspend fun doWork(): Result = when (val r = JobsApi.snapshot()) {
-        is JobsResult.Success -> { JobsBackground.onSnapshot(applicationContext, r.value); Result.success() }
-        JobsResult.AuthRequired -> Result.success() // signed out: nothing to refresh until the admin signs in again
-        is JobsResult.Failure -> Result.retry()
+    override suspend fun doWork(): Result {
+        val store = EncryptedStore(applicationContext)
+        val owner = AuthRepository.readCachedUser(store) ?: return Result.success()
+        return when (val r = JobsApi.snapshot()) {
+            is JobsResult.Success -> {
+                if (AuthRepository.readCachedUser(store) == owner) {
+                    JobsBackground.onSnapshot(applicationContext, r.value)
+                }
+                Result.success()
+            }
+            JobsResult.AuthRequired -> Result.success()
+            is JobsResult.Failure -> Result.retry()
+        }
     }
 }
 
@@ -123,9 +145,18 @@ class ReminderWorker(context: Context, params: WorkerParameters) : CoroutineWork
         val key = inputData.getString("key") ?: return Result.success()
         val jobId = inputData.getString("jobId") ?: return Result.success()
         val category = NotificationCategory.entries.firstOrNull { it.serverKey == inputData.getString("category") } ?: return Result.success()
+        val store = EncryptedStore(applicationContext)
+        val owner = AuthRepository.readCachedUser(store)
         val prefs = JobsBackground.fired(applicationContext)
         if (JobsBackground.enabled(applicationContext)[category] == false) return Result.success()
-        val job = (JobsApi.detail(jobId) as? JobsResult.Success)?.value
+        val job = when (val detail = JobsApi.detail(jobId)) {
+            is JobsResult.Success -> detail.value
+            JobsResult.AuthRequired -> return Result.success()
+            is JobsResult.Failure -> {
+                if (!detail.connectionUnavailable) return Result.success()
+                null
+            }
+        }
         // Re-check the live state so a reminder never fires for a job that was cancelled, started or finished meanwhile.
         if (job != null) {
             if (job.cancelled) return Result.success()
@@ -137,7 +168,7 @@ class ReminderWorker(context: Context, params: WorkerParameters) : CoroutineWork
         } else if (category == NotificationCategory.RUNNING_LATE) {
             return Result.success() // cannot confirm the job is still running; do not guess
         }
-        if (!JobsBackground.markFired(prefs, key)) return Result.success()
+        if (AuthRepository.readCachedUser(store) != owner || !JobsBackground.markFired(prefs, key)) return Result.success()
         JobNotifier.show(applicationContext, key, category, job ?: placeholder(jobId))
         return Result.success()
     }
