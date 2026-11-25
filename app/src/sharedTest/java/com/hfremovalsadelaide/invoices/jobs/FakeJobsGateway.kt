@@ -20,6 +20,7 @@ class FakeJobsGateway(initial: List<Job>) : JobsGateway {
     var lastSignature: String? = null
     var lastSignoffName: String? = null
     var lastSkipReason: String? = null
+    var lastCrewEvent: CrewEventItem? = null
 
     private fun tick(): Instant { clock = clock.plusSeconds(1800); return clock }
 
@@ -77,6 +78,17 @@ class FakeJobsGateway(initial: List<Job>) : JobsGateway {
         }
         calls += "stop:$stopId:$event"
         update(job.copy(stops = job.stops.map { if (it.id == stopId) updatedStop else it }))
+        return JobsResult.Success("{}")
+    }
+
+    override suspend fun recordCrewEvent(
+        id: String, memberName: String, eventType: String, customerAcknowledged: Boolean,
+        acknowledgmentName: String, notes: String, at: Instant?
+    ): JobsResult<String> {
+        val job = jobs.first { it.id == id }
+        val event = CrewEventItem("fixture-crew-event", memberName, eventType, at ?: tick(), customerAcknowledged, acknowledgmentName, notes)
+        lastCrewEvent = event
+        update(job.copy(crewEvents = job.crewEvents + event))
         return JobsResult.Success("{}")
     }
 

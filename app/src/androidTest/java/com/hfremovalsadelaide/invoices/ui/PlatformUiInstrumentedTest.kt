@@ -319,7 +319,7 @@ class PlatformUiInstrumentedTest {
                     state = state,
                     viewModel = vm,
                     onGoToSignIn = {},
-                    onDownloadCompletionPdf = {},
+                    onDownloadCompletionPdf = { _, _ -> },
                     permissions = setOf("jobs.read", "jobs.assign", "jobs.reschedule", "calendar.sync"),
                     canDispatch = true
                 )
@@ -348,7 +348,7 @@ class PlatformUiInstrumentedTest {
                     state = state,
                     viewModel = vm,
                     onGoToSignIn = {},
-                    onDownloadCompletionPdf = {},
+                    onDownloadCompletionPdf = { _, _ -> },
                     permissions = setOf("jobs.read", "inventory.read", "inventory.write", "condition.write", "timesheets.own")
                 )
             }

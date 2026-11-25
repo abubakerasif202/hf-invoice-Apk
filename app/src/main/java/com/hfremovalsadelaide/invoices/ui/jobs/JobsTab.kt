@@ -21,7 +21,7 @@ fun JobsTab(
     state: JobsUiState,
     viewModel: JobsViewModel,
     onGoToSignIn: () -> Unit,
-    onDownloadCompletionPdf: (jobId: String) -> Unit,
+    onDownloadCompletionPdf: (jobId: String, includePhotos: Boolean) -> Unit,
     permissions: Set<String>,
     onDownloadInventoryPdf: (jobId: String) -> Unit = {},
     canDispatch: Boolean = false,
@@ -64,7 +64,7 @@ fun JobsTab(
                     onAct = { viewModel.act(openJob.id, it) },
                     onCorrect = { field, at, reason -> viewModel.correct(openJob.id, field, at, reason) },
                     onOpenSignoff = { viewModel.openSignoff(openJob.id) },
-                    onDownloadCompletionPdf = { onDownloadCompletionPdf(openJob.id) },
+                    onDownloadCompletionPdf = { includePhotos -> onDownloadCompletionPdf(openJob.id, includePhotos) },
                     onCreateInvoice = { viewModel.requestInvoiceDraft(openJob.id) },
                     onConfirmDraft = viewModel::confirmInvoiceDraft,
                     onDismissDraft = viewModel::dismissDraft,
@@ -77,8 +77,8 @@ fun JobsTab(
                         showInventory = true
                     },
                     onOpenCondition = { showCondition = true },
-                    onRecordCrewEvent = { name, type, ack, ackName, notes ->
-                        viewModel.recordCrewEvent(openJob.id, name, type, ack, ackName, notes)
+                    onRecordCrewEvent = { name, type, ack, ackName, notes, at ->
+                        viewModel.recordCrewEvent(openJob.id, name, type, ack, ackName, notes, at)
                     },
                     onStopEvent = { stopId, event -> viewModel.recordStopEvent(openJob.id, stopId, event) },
                     onSaveStops = { viewModel.saveStops(openJob.id, it) },

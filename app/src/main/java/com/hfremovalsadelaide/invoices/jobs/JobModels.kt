@@ -281,7 +281,8 @@ interface JobsGateway {
         eventType: String,
         customerAcknowledged: Boolean,
         acknowledgmentName: String,
-        notes: String
+        notes: String,
+        at: Instant? = null
     ): JobsResult<String> = JobsResult.Failure("Not supported")
 
     suspend fun fetchInventory(id: String): JobsResult<JobInventoryState> = JobsResult.Failure("Not supported")

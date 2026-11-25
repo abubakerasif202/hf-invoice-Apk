@@ -368,12 +368,13 @@ class JobsViewModel(
         eventType: String,
         customerAcknowledged: Boolean,
         acknowledgmentName: String,
-        notes: String
+        notes: String,
+        at: Instant? = null
     ) {
         if (memberName.isBlank()) return say("Enter the crew member's name.")
         guarded {
             report(
-                gateway.recordCrewEvent(jobId, memberName.trim(), eventType, customerAcknowledged, acknowledgmentName.trim(), notes.trim()),
+                gateway.recordCrewEvent(jobId, memberName.trim(), eventType, customerAcknowledged, acknowledgmentName.trim(), notes.trim(), at),
                 "Crew log updated."
             )
             refreshJobDetail(jobId)
