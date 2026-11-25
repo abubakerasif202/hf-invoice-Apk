@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import org.json.JSONObject
+import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.util.UUID
@@ -234,10 +235,65 @@ class JobsViewModel(
                 "wait_end" -> false
                 else -> job.waitActive
             }
-            mergeJob(job.copy(state = nextState, waitActive = nextWait))
+            val now = Instant.now()
+            val m = job.milestones ?: JobMilestones(null, null, null)
+            val nextMilestones = when (action) {
+                "travelling" -> m.copy(travellingAt = m.travellingAt ?: now)
+                "arrived" -> m.copy(arrivedAt = m.arrivedAt ?: now)
+                else -> job.milestones
+            }
+            mergeJob(job.copy(state = nextState, waitActive = nextWait, milestones = nextMilestones))
         }
         if (action == "finish") _state.update { it.copy(signoffJobId = jobId) }
         say("Saved offline ($action). Will sync automatically when back online.")
+    }
+
+    /** Arrival or completion at a stop. Works offline: it is queued with an idempotency key and shown immediately. */
+    fun recordStopEvent(jobId: String, stopId: String, event: String) = guarded {
+        val job = _state.value.snapshot?.jobs?.firstOrNull { it.id == jobId }
+        if (!isNetworkAvailable() && syncQueue != null) {
+            enqueueStopEvent(job, stopId, event)
+            return@guarded
+        }
+        when (val r = gateway.stopEvent(jobId, stopId, event)) {
+            is JobsResult.Success -> {
+                refresh()
+                refreshJobDetail(jobId)
+            }
+            is JobsResult.Failure -> {
+                if (syncQueue != null && isConnectionError(r.message)) enqueueStopEvent(job, stopId, event)
+                else _state.update { it.copy(message = r.message) }
+            }
+            JobsResult.AuthRequired -> _state.update { it.copy(authRequired = true) }
+        }
+    }
+
+    private fun enqueueStopEvent(job: Job?, stopId: String, event: String) {
+        if (job == null) return say("Open the job again before recording this stop.")
+        syncQueue?.enqueue(
+            kind = OfflineOpKind.STOP_EVENT,
+            jobId = job.id,
+            label = "${job.title.take(28).ifBlank { "Job" }} · stop $event",
+            payload = JSONObject().put("stopId", stopId).put("event", event)
+        )
+        scheduleOfflineSync()
+        val now = Instant.now()
+        mergeJob(
+            job.copy(
+                stops = job.stops.map { s ->
+                    if (s.id != stopId) s else if (event == "arrived") s.copy(arrivedAt = s.arrivedAt ?: now) else s.copy(completedAt = s.completedAt ?: now)
+                }
+            )
+        )
+        say("Saved offline (stop $event). Will sync automatically when back online.")
+    }
+
+    fun saveStops(jobId: String, stops: List<StopDraft>) {
+        MovingDay.validate(stops)?.let { return say(it) }
+        guarded {
+            report(gateway.saveStops(jobId, stops), "Stops saved.")
+            refreshJobDetail(jobId)
+        }
     }
 
     fun correct(jobId: String, field: String, atIso: String, reason: String) {
@@ -610,6 +666,6 @@ class JobsViewModel(
     }
 
     companion object {
-        private val OFFLINE_SAFE_ACTIONS = setOf("start", "pause", "resume", "finish", "wait_start", "wait_end")
+        private val OFFLINE_SAFE_ACTIONS = setOf("start", "pause", "resume", "finish", "wait_start", "wait_end", "travelling", "arrived")
     }
 }

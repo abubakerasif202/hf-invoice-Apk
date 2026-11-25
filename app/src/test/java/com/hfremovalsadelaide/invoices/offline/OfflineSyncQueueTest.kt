@@ -44,7 +44,8 @@ class OfflineSyncQueueTest {
     @Test
     fun `offline queue only supports field operations and never financial issuance`() {
         val names = OfflineOpKind.entries.map { it.serverKind }.toSet()
-        assertEquals(setOf("job_time_action", "condition_report", "inventory_scan", "job_photo"), names)
+        // stop_event records arriving at or leaving a pickup or delivery stop: a field operation, never financial.
+        assertEquals(setOf("job_time_action", "condition_report", "inventory_scan", "job_photo", "stop_event"), names)
     }
 
     @Test

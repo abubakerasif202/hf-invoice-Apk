@@ -80,6 +80,8 @@ fun JobsTab(
                     onRecordCrewEvent = { name, type, ack, ackName, notes ->
                         viewModel.recordCrewEvent(openJob.id, name, type, ack, ackName, notes)
                     },
+                    onStopEvent = { stopId, event -> viewModel.recordStopEvent(openJob.id, stopId, event) },
+                    onSaveStops = { viewModel.saveStops(openJob.id, it) },
                     modifier = Modifier.fillMaxSize()
                 )
 

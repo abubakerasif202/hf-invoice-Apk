@@ -53,7 +53,12 @@ import com.hfremovalsadelaide.invoices.jobs.DraftReview
 import com.hfremovalsadelaide.invoices.jobs.Job
 import com.hfremovalsadelaide.invoices.jobs.JobFormat
 import com.hfremovalsadelaide.invoices.jobs.JobState
+import com.hfremovalsadelaide.invoices.jobs.JourneyStatus
+import com.hfremovalsadelaide.invoices.jobs.MovingDay
 import com.hfremovalsadelaide.invoices.jobs.SignoffStatus
+import com.hfremovalsadelaide.invoices.jobs.StopDraft
+import com.hfremovalsadelaide.invoices.jobs.StopKind
+import com.hfremovalsadelaide.invoices.jobs.StopStatus
 import com.hfremovalsadelaide.invoices.ui.theme.ForestCanopy
 import com.hfremovalsadelaide.invoices.ui.theme.ForestGreen
 import com.hfremovalsadelaide.invoices.ui.theme.GoldAccent
@@ -84,10 +89,13 @@ fun JobDetailScreen(
     onOpenInventory: () -> Unit = {},
     onOpenCondition: () -> Unit = {},
     onRecordCrewEvent: (memberName: String, eventType: String, ack: Boolean, ackName: String, notes: String) -> Unit = { _, _, _, _, _ -> },
+    onStopEvent: (stopId: String, event: String) -> Unit = { _, _ -> },
+    onSaveStops: (List<StopDraft>) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     BackHandler(onBack = onBack)
     val context = LocalContext.current
+    var editingStops by remember { mutableStateOf(false) }
     var confirmFinish by remember { mutableStateOf(false) }
     var correcting by remember { mutableStateOf(false) }
     var recordingCrewEvent by remember { mutableStateOf(false) }
@@ -184,13 +192,33 @@ fun JobDetailScreen(
                     }
                 }
             }
-            Section("Locations") {
-                Row("Pickup", job.pickup)
-                Row("Drop-off", job.destination)
-                if (job.travelNotes.isNotBlank()) Row("Travel notes", job.travelNotes)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    job.pickup?.let { NavButton(context, "Navigate to pickup", it) }
-                    job.destination?.let { NavButton(context, "Navigate to drop-off", it) }
+            val canAct = "jobs.act" in permissions
+            if ((canAct && job.state == JobState.SCHEDULED && !job.cancelled && !job.notice) || job.milestones != null) {
+                JourneySection(job = job, canAct = canAct, busy = busy, onAct = onAct)
+            }
+            if (job.stops.isNotEmpty()) {
+                StopsSection(
+                    job = job,
+                    canAct = canAct,
+                    busy = busy,
+                    canEdit = canDispatch && job.state != JobState.COMPLETED && !job.cancelled && !job.notice,
+                    onStopEvent = onStopEvent,
+                    onEdit = { editingStops = true },
+                    context = context
+                )
+                if (job.travelNotes.isNotBlank()) Section("Travel notes") { Text(job.travelNotes, style = MaterialTheme.typography.bodyMedium) }
+            } else {
+                Section("Locations") {
+                    Row("Pickup", job.pickup)
+                    Row("Drop-off", job.destination)
+                    if (job.travelNotes.isNotBlank()) Row("Travel notes", job.travelNotes)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        job.pickup?.let { NavButton(context, "Navigate to pickup", it) }
+                        job.destination?.let { NavButton(context, "Navigate to drop-off", it) }
+                        if (canDispatch && job.state != JobState.COMPLETED && !job.cancelled && !job.notice) {
+                            OutlinedButton(onClick = { editingStops = true }, modifier = Modifier.testTag("job_add_stops_btn")) { Text("Add pickup / delivery stops") }
+                        }
+                    }
                 }
             }
             Section("Booking & Dispatch") {
@@ -273,7 +301,157 @@ fun JobDetailScreen(
             }
         )
     }
+    if (editingStops) {
+        StopsEditorDialog(
+            initial = if (job.stops.isNotEmpty()) {
+                MovingDay.toDrafts(job.stops)
+            } else {
+                // Start from the booking's own addresses so dispatch only adds what is missing.
+                listOfNotNull(
+                    job.pickup?.takeIf { it.isNotBlank() }?.let { StopDraft(null, StopKind.PICKUP, it) },
+                    job.destination?.takeIf { it.isNotBlank() }?.let { StopDraft(null, StopKind.DELIVERY, it) }
+                )
+            },
+            onDismiss = { editingStops = false },
+            onSave = { editingStops = false; onSaveStops(it) }
+        )
+    }
     draft?.let { InvoiceDraftDialog(it, busy, onConfirmDraft, onDismissDraft) }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun JourneySection(job: Job, canAct: Boolean, busy: Boolean, onAct: (String) -> Unit) {
+    val m = job.milestones
+    Section("Journey") {
+        val status = when (MovingDay.journeyStatus(job)) {
+            JourneyStatus.NOT_STARTED -> "Not on the way yet"
+            JourneyStatus.TRAVELLING -> "Travelling since ${JobFormat.time(m?.travellingAt)}"
+            else -> m?.arrivedAt?.let { "Arrived ${JobFormat.time(it)}" + (m.travelMinutes?.let { t -> " · travel $t min" } ?: "") } ?: "Arrival not recorded"
+        }
+        Text(status, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.testTag("journey_status"))
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (MovingDay.canMarkTravelling(job, canAct)) {
+                Button(onClick = { onAct("travelling") }, enabled = !busy, modifier = Modifier.heightIn(min = 48.dp).testTag("job_travelling_btn")) { Text("Travelling") }
+            }
+            if (MovingDay.canMarkArrived(job, canAct)) {
+                Button(onClick = { onAct("arrived") }, enabled = !busy, modifier = Modifier.heightIn(min = 48.dp).testTag("job_arrived_btn")) { Text("Arrived") }
+            }
+        }
+        Text(
+            "Travel time is kept for your records and is not part of charged hours.",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun StopsSection(
+    job: Job,
+    canAct: Boolean,
+    busy: Boolean,
+    canEdit: Boolean,
+    onStopEvent: (stopId: String, event: String) -> Unit,
+    onEdit: () -> Unit,
+    context: android.content.Context
+) {
+    val next = MovingDay.nextStop(job)
+    Section("Stops") {
+        MovingDay.summary(job)?.let { Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.secondary) }
+        job.stops.sortedBy { it.seq }.forEach { s ->
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = BorderStroke(if (s.id == next?.id) 2.dp else 1.dp, if (s.id == next?.id) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline),
+                modifier = Modifier.fillMaxWidth().testTag("stop_card_${s.seq}")
+            ) {
+                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    val status = when (MovingDay.stopStatus(s)) {
+                        StopStatus.COMPLETED -> "Done ${JobFormat.time(s.completedAt)}"
+                        StopStatus.ARRIVED -> "Arrived ${JobFormat.time(s.arrivedAt)}"
+                        StopStatus.PENDING -> if (s.id == next?.id) "Next" else "Pending"
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Stop ${s.seq} · ${s.kind.label}", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
+                        Text(status, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.secondary)
+                    }
+                    Text(s.address, style = MaterialTheme.typography.bodyMedium)
+                    val contact = listOf(s.contactName, s.contactPhone).filter { it.isNotBlank() }.joinToString(" · ")
+                    if (contact.isNotBlank()) Text(contact, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (s.notes.isNotBlank()) Text(s.notes, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        NavButton(context, "Navigate", s.address)
+                        if (MovingDay.canArriveAtStop(job, s, canAct)) {
+                            Button(onClick = { onStopEvent(s.id, "arrived") }, enabled = !busy, modifier = Modifier.heightIn(min = 48.dp).testTag("stop_arrived_${s.seq}")) { Text("Arrived") }
+                        }
+                        if (MovingDay.canCompleteStop(job, s, canAct)) {
+                            Button(onClick = { onStopEvent(s.id, "completed") }, enabled = !busy, modifier = Modifier.heightIn(min = 48.dp).testTag("stop_done_${s.seq}")) { Text("Done") }
+                        }
+                    }
+                }
+            }
+        }
+        if (canEdit) OutlinedButton(onClick = onEdit, modifier = Modifier.testTag("job_edit_stops_btn")) { Text("Edit stops") }
+    }
+}
+
+/** Dispatch edits the ordered pickup and delivery list. Visited stops keep their place and cannot be removed. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun StopsEditorDialog(initial: List<StopDraft>, onDismiss: () -> Unit, onSave: (List<StopDraft>) -> Unit) {
+    var stops by remember { mutableStateOf(initial) }
+    val error = MovingDay.validate(stops)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        modifier = Modifier.testTag("stops_editor_dialog"),
+        title = { Text("Pickup & delivery stops") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                stops.forEachIndexed { index, s ->
+                    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+                        Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text("Stop ${index + 1}" + if (s.visited) " · already visited" else "", style = MaterialTheme.typography.labelLarge)
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                StopKind.entries.forEach { kind ->
+                                    FilterChip(
+                                        selected = s.kind == kind,
+                                        enabled = !s.visited,
+                                        onClick = { stops = stops.toMutableList().also { it[index] = s.copy(kind = kind) } },
+                                        label = { Text(kind.label) }
+                                    )
+                                }
+                            }
+                            OutlinedTextField(
+                                value = s.address,
+                                onValueChange = { v -> stops = stops.toMutableList().also { it[index] = s.copy(address = v) } },
+                                label = { Text("Address") },
+                                modifier = Modifier.fillMaxWidth().testTag("stop_address_$index")
+                            )
+                            OutlinedTextField(
+                                value = s.notes,
+                                onValueChange = { v -> stops = stops.toMutableList().also { it[index] = s.copy(notes = v) } },
+                                label = { Text("Notes (lift, parking, access)") },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                TextButton(onClick = { stops = MovingDay.moveUp(stops, index) }, enabled = index > 0) { Text("Move up") }
+                                TextButton(onClick = { stops = MovingDay.moveDown(stops, index) }, enabled = index < stops.size - 1) { Text("Move down") }
+                                TextButton(onClick = { stops = MovingDay.remove(stops, index) }, enabled = !s.visited) { Text("Remove") }
+                            }
+                        }
+                    }
+                }
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { stops = MovingDay.add(stops, StopKind.PICKUP) }, enabled = stops.size < MovingDay.MAX_STOPS) { Text("Add pickup") }
+                    OutlinedButton(onClick = { stops = MovingDay.add(stops, StopKind.DELIVERY) }, enabled = stops.size < MovingDay.MAX_STOPS) { Text("Add delivery") }
+                }
+                error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("stops_editor_error")) }
+            }
+        },
+        confirmButton = { Button(onClick = { onSave(stops) }, enabled = error == null, modifier = Modifier.testTag("stops_editor_save")) { Text("Save stops") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
 }
 
 @Composable
