@@ -64,7 +64,10 @@ import androidx.compose.ui.unit.dp
 import com.hfremovalsadelaide.invoices.data.StaffMember
 import com.hfremovalsadelaide.invoices.data.VehicleRecord
 import com.hfremovalsadelaide.invoices.jobs.BookingStatus
+import com.hfremovalsadelaide.invoices.jobs.AttentionLevel
 import com.hfremovalsadelaide.invoices.jobs.CalendarView
+import com.hfremovalsadelaide.invoices.jobs.ClashKind
+import com.hfremovalsadelaide.invoices.jobs.DispatchLogic
 import com.hfremovalsadelaide.invoices.jobs.Job
 import com.hfremovalsadelaide.invoices.jobs.JobFormat
 import com.hfremovalsadelaide.invoices.jobs.JobState
@@ -76,6 +79,7 @@ import com.hfremovalsadelaide.invoices.ui.theme.ForestGreen
 import com.hfremovalsadelaide.invoices.ui.theme.GoldAccent
 import com.hfremovalsadelaide.invoices.ui.theme.PureWhite
 import java.time.Duration
+import java.time.Instant
 import java.time.LocalDate
 
 @Composable
@@ -155,6 +159,7 @@ fun JobsScreen(
             job = job,
             staff = availableStaff,
             vehicles = availableVehicles,
+            otherJobs = state.snapshot?.jobs.orEmpty(),
             onDismiss = { assignTarget = null },
             onSave = { assignments, vehicleId, truck, travel, dispatch ->
                 assignTarget = null
@@ -313,7 +318,27 @@ private fun androidx.compose.foundation.lazy.LazyListScope.dispatchBoard(
         DateNav("Dispatch · ${JobFormat.longDay(state.selectedDate)}", { onSelectDate(state.selectedDate.minusDays(1)) }, { onSelectDate(state.selectedDate.plusDays(1)) })
     }
     val dayJobs = jobs.filter { JobFormat.localDate(it) == state.selectedDate }.sortedBy { it.effectiveStart }
-    val lanes = dayJobs.groupBy { it.truck?.ifBlank { "Unassigned Truck" } ?: "Unassigned Truck" }
+    val conflictIds = state.snapshot?.conflicts.orEmpty().flatMap { listOf(it.first, it.second) }.toSet()
+    val now = Instant.now()
+    val attention = dayJobs.associate { it.id to DispatchLogic.attention(it, conflictIds, now) }
+    val unassignedLane = "Unassigned Truck"
+    // Unassigned work goes first so a dispatcher sees it before the allocated lanes.
+    val lanes = dayJobs.groupBy { it.truck?.ifBlank { unassignedLane } ?: unassignedLane }
+        .toList()
+        .sortedBy { (name, _) -> if (name == unassignedLane) 0 else 1 }
+    if (dayJobs.isNotEmpty()) {
+        item(key = "dispatch_summary") {
+            val high = attention.values.count { it.level == AttentionLevel.HIGH }
+            val medium = attention.values.count { it.level == AttentionLevel.MEDIUM }
+            val subs = dayJobs.count { j -> j.assignmentDetails.orEmpty().any { it.role == "subcontractor" } }
+            Text(
+                text = "$high need action · $medium to review · $subs with subcontractors",
+                style = MaterialTheme.typography.labelLarge,
+                color = if (high > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.testTag("dispatch_summary")
+            )
+        }
+    }
     if (lanes.isEmpty()) {
         item { EmptyText("No bookings on ${JobFormat.day(state.selectedDate)}.") }
     } else {
@@ -331,7 +356,14 @@ private fun androidx.compose.foundation.lazy.LazyListScope.dispatchBoard(
                             fontWeight = FontWeight.Bold
                         )
                         laneJobs.forEach { job ->
-                            DispatchJobCard(job, canDispatch, { onOpen(job.id) }, { onRequestAssign(job) }, { onRequestReschedule(job) })
+                            DispatchJobCard(
+                                job = job,
+                                canDispatch = canDispatch,
+                                attention = attention.getValue(job.id),
+                                onOpen = { onOpen(job.id) },
+                                onAssign = { onRequestAssign(job) },
+                                onReschedule = { onRequestReschedule(job) }
+                            )
                         }
                     }
                 }
@@ -345,6 +377,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.dispatchBoard(
 private fun DispatchJobCard(
     job: Job,
     canDispatch: Boolean,
+    attention: com.hfremovalsadelaide.invoices.jobs.Attention,
     onOpen: () -> Unit,
     onAssign: () -> Unit,
     onReschedule: () -> Unit
@@ -365,6 +398,19 @@ private fun DispatchJobCard(
             Text("${JobFormat.scheduleText(job)} ($duration)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
             Text("Pickup: ${job.pickup ?: "TBC"} -> Drop-off: ${job.destination ?: "TBC"}", style = MaterialTheme.typography.bodySmall)
             Text("Crew (${job.crewSize ?: "?"}): ${job.assignees.takeIf { it.isNotEmpty() }?.joinToString() ?: "Unassigned"}", style = MaterialTheme.typography.bodySmall)
+            val subcontractors = job.assignmentDetails.orEmpty().filter { it.role == "subcontractor" }.map { it.assignee }
+            if (subcontractors.isNotEmpty()) {
+                Text("Subcontractors: ${subcontractors.joinToString()}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
+            }
+            if (attention.level != AttentionLevel.NONE) {
+                Text(
+                    text = (if (attention.level == AttentionLevel.HIGH) "Needs action: " else "Review: ") + attention.reasons.joinToString(" · "),
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (attention.level == AttentionLevel.HIGH) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.testTag("dispatch_attention_${attention.level.name.lowercase()}")
+                )
+            }
             if (job.travelNotes.isNotBlank()) {
                 Text("Travel: ${job.travelNotes}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -548,7 +594,8 @@ fun AssignCrewDialog(
     staff: List<StaffMember>,
     vehicles: List<VehicleRecord>,
     onDismiss: () -> Unit,
-    onSave: (List<Triple<String?, String, String>>, String?, String?, String, String) -> Unit
+    onSave: (List<Triple<String?, String, String>>, String?, String?, String, String) -> Unit,
+    otherJobs: List<Job> = emptyList()
 ) {
     var selectedVehicleId by remember { mutableStateOf(job.vehicleId) }
     var truckText by remember { mutableStateOf(job.truck.orEmpty()) }
@@ -580,6 +627,17 @@ fun AssignCrewDialog(
         if (extraAssignee.isNotBlank()) add(Triple(null, extraAssignee.trim(), "subcontractor"))
     }
     val duplicateNames = assignments.map { it.second }.distinct().size != assignments.size
+    val clashes = DispatchLogic.clashes(
+        job = job,
+        others = otherJobs,
+        staffIds = selectedStaff,
+        crewNames = (manualCrew.map { it.assignee } + listOfNotNull(extraAssignee.trim().ifBlank { null })).toSet() +
+            selectedStaff.mapNotNull { id -> staff.firstOrNull { it.id == id }?.name },
+        vehicleId = selectedVehicleId,
+        truck = truckText.trim().ifBlank { null }
+    ).distinctBy { it.kind to it.otherJobId }
+    val selectedVehicle = vehicles.firstOrNull { it.id == selectedVehicleId }
+    val vehicleUnavailable = selectedVehicle != null && selectedVehicle.status != "available"
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -636,6 +694,22 @@ fun AssignCrewDialog(
                 if (duplicateNames) {
                     Text("Each crew member must have a distinct name on this booking.", color = MaterialTheme.colorScheme.error)
                 }
+                if (vehicleUnavailable) {
+                    Text(
+                        "${selectedVehicle?.name} is marked ${selectedVehicle?.status}.",
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.testTag("assign_vehicle_unavailable")
+                    )
+                }
+                clashes.forEach { clash ->
+                    val what = if (clash.kind == ClashKind.CREW) "Crew member" else "Truck"
+                    Text(
+                        "$what ${clash.label.ifBlank { "selected" }} is already on \"${clash.otherTitle}\" at the same time.",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.testTag("assign_clash_warning")
+                    )
+                }
                 OutlinedTextField(travelNotes, { travelNotes = it }, label = { Text("Travel considerations") })
                 OutlinedTextField(dispatchNotes, { dispatchNotes = it }, label = { Text("Dispatch instructions") })
             }
@@ -644,7 +718,7 @@ fun AssignCrewDialog(
             Button(
                 onClick = { onSave(assignments, selectedVehicleId, truckText.trim().ifBlank { null }, travelNotes, dispatchNotes) },
                 enabled = canEditExistingCrew && !duplicateNames
-            ) { Text("Save Assignment") }
+            ) { Text(if (clashes.isNotEmpty() || vehicleUnavailable) "Save Anyway" else "Save Assignment") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )

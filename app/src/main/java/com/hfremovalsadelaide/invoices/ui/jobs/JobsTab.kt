@@ -113,6 +113,7 @@ fun JobsTab(
                         job = openJob,
                         staff = availableStaff,
                         vehicles = availableVehicles,
+                        otherJobs = state.snapshot?.jobs.orEmpty(),
                         onDismiss = { showAssignDialog = false },
                         onSave = { assignments, vehicleId, truck, travel, dispatch ->
                             showAssignDialog = false
