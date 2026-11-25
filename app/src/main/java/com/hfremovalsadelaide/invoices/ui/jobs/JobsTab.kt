@@ -154,6 +154,14 @@ fun JobsTab(
                 modifier = Modifier.fillMaxSize()
             )
         }
+        state.scheduleConflict?.let { prompt ->
+            ScheduleConflictDialog(
+                prompt = prompt,
+                canOverride = "jobs.override" in permissions,
+                onConfirm = viewModel::confirmScheduleOverride,
+                onDismiss = viewModel::dismissScheduleConflict
+            )
+        }
         if (showNotifications) {
             JobNotificationSheet(
                 preferences = state.preferences,

@@ -59,6 +59,7 @@ data class JobsUiState(
     val isFromOfflineCache: Boolean = false,
     val inventory: JobInventoryState? = null,
     val inventoryLoading: Boolean = false,
+    val scheduleConflict: ScheduleConflictPrompt? = null,
     val message: String? = null
 ) {
     fun filteredJobs(): List<Job> {
@@ -255,22 +256,48 @@ class JobsViewModel(
         vehicleId: String?,
         truck: String?,
         travelNotes: String,
-        dispatchNotes: String
+        dispatchNotes: String,
+        overrideReason: String? = null
     ) = guarded {
-        report(
-            gateway.assignJob(jobId, staffAssignments, vehicleId, truck, travelNotes.trim(), dispatchNotes.trim()),
-            "Crew and vehicle assignment updated."
-        )
+        val result = gateway.assignJob(jobId, staffAssignments, vehicleId, truck, travelNotes.trim(), dispatchNotes.trim(), overrideReason)
+        val pending = PendingScheduleAction.Assign(staffAssignments, vehicleId, truck, travelNotes, dispatchNotes)
+        if (promptIfConflict(result, jobId, pending)) return@guarded
+        report(result, "Crew and vehicle assignment updated.")
         refreshJobDetail(jobId)
     }
 
-    fun rescheduleJob(jobId: String, startIso: String, endIso: String, reason: String) {
+    fun rescheduleJob(jobId: String, startIso: String, endIso: String, reason: String, overrideReason: String? = null) {
         if (startIso.isBlank() || endIso.isBlank()) return say("Enter start and end times.")
         guarded {
-            report(gateway.rescheduleJob(jobId, startIso, endIso, reason.trim()), "Job rescheduled in dispatch board.")
+            val result = gateway.rescheduleJob(jobId, startIso, endIso, reason.trim(), overrideReason)
+            if (promptIfConflict(result, jobId, PendingScheduleAction.Reschedule(startIso, endIso, reason))) return@guarded
+            report(result, "Job rescheduled in dispatch board.")
             refreshJobDetail(jobId)
         }
     }
+
+    /** A server-detected clash is not an error message: it opens a prompt that an authorised dispatcher can override. */
+    private fun promptIfConflict(result: JobsResult<String>, jobId: String, pending: PendingScheduleAction): Boolean {
+        if (result !is JobsResult.Failure || result.conflicts.isEmpty()) return false
+        _state.update { it.copy(scheduleConflict = ScheduleConflictPrompt(jobId, result.conflicts, pending)) }
+        return true
+    }
+
+    /** Resends the refused change with the dispatcher's written reason; the server audits it and checks the permission. */
+    fun confirmScheduleOverride(reason: String) {
+        val prompt = _state.value.scheduleConflict ?: return
+        val trimmed = reason.trim()
+        if (trimmed.length < OVERRIDE_REASON_MIN) return say("Enter a reason of at least $OVERRIDE_REASON_MIN characters.")
+        _state.update { it.copy(scheduleConflict = null) }
+        when (val action = prompt.retry) {
+            is PendingScheduleAction.Assign -> assignJob(
+                prompt.jobId, action.staffAssignments, action.vehicleId, action.truck, action.travelNotes, action.dispatchNotes, trimmed
+            )
+            is PendingScheduleAction.Reschedule -> rescheduleJob(prompt.jobId, action.startIso, action.endIso, action.reason, trimmed)
+        }
+    }
+
+    fun dismissScheduleConflict() = _state.update { it.copy(scheduleConflict = null) }
 
     fun recordCrewEvent(
         jobId: String,

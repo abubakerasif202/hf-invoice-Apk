@@ -246,10 +246,11 @@ interface JobsGateway {
         vehicleId: String?,
         truck: String?,
         travelNotes: String,
-        dispatchNotes: String
+        dispatchNotes: String,
+        overrideReason: String? = null
     ): JobsResult<String> = JobsResult.Failure("Not supported")
 
-    suspend fun rescheduleJob(id: String, startIso: String, endIso: String, reason: String): JobsResult<String> =
+    suspend fun rescheduleJob(id: String, startIso: String, endIso: String, reason: String, overrideReason: String? = null): JobsResult<String> =
         JobsResult.Failure("Not supported")
 
     suspend fun recordCrewEvent(
@@ -283,5 +284,10 @@ interface JobsGateway {
 sealed interface JobsResult<out T> {
     data class Success<T>(val value: T) : JobsResult<T>
     data object AuthRequired : JobsResult<Nothing>
-    data class Failure(val message: String, val connectionUnavailable: Boolean = false) : JobsResult<Nothing>
+    /** [conflicts] is non-empty only for a scheduling conflict the dispatcher may be able to override. */
+    data class Failure(
+        val message: String,
+        val connectionUnavailable: Boolean = false,
+        val conflicts: List<ScheduleConflictInfo> = emptyList()
+    ) : JobsResult<Nothing>
 }

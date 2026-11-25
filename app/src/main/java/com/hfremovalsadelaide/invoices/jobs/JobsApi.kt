@@ -246,7 +246,8 @@ object JobsApi : JobsGateway {
         vehicleId: String?,
         truck: String?,
         travelNotes: String,
-        dispatchNotes: String
+        dispatchNotes: String,
+        overrideReason: String?
     ): JobsResult<String> {
         val arr = JSONArray()
         staffAssignments.forEach { (staffId, name, role) ->
@@ -259,15 +260,15 @@ object JobsApi : JobsGateway {
             .put("truck", truck ?: JSONObject.NULL)
             .put("travelNotes", travelNotes)
             .put("dispatchNotes", dispatchNotes)
+        if (overrideReason != null) body.put("override", JSONObject().put("reason", overrideReason))
         return call("POST", "/api/jobs/$id", body) { JobsResult.Success(it) }
     }
 
-    override suspend fun rescheduleJob(id: String, startIso: String, endIso: String, reason: String): JobsResult<String> =
-        call(
-            "POST",
-            "/api/jobs/$id",
-            JSONObject().put("action", "reschedule").put("start", startIso).put("end", endIso).put("reason", reason)
-        ) { JobsResult.Success(it) }
+    override suspend fun rescheduleJob(id: String, startIso: String, endIso: String, reason: String, overrideReason: String?): JobsResult<String> {
+        val body = JSONObject().put("action", "reschedule").put("start", startIso).put("end", endIso).put("reason", reason)
+        if (overrideReason != null) body.put("override", JSONObject().put("reason", overrideReason))
+        return call("POST", "/api/jobs/$id", body) { JobsResult.Success(it) }
+    }
 
     override suspend fun recordCrewEvent(
         id: String,
@@ -426,7 +427,11 @@ object JobsApi : JobsGateway {
                     code in 200..299 -> parse(connection.inputStream.bufferedReader(StandardCharsets.UTF_8).use { it.readText() })
                     else -> {
                         val err = connection.errorStream?.bufferedReader(StandardCharsets.UTF_8)?.use { it.readText() }
-                        JobsResult.Failure(runCatching { JSONObject(err.orEmpty()).optString("error") }.getOrNull()?.ifBlank { null } ?: "Request failed ($code).")
+                        val conflicts = if (code == HttpURLConnection.HTTP_CONFLICT) parseScheduleConflicts(err.orEmpty()) else emptyList()
+                        JobsResult.Failure(
+                            runCatching { JSONObject(err.orEmpty()).optString("error") }.getOrNull()?.ifBlank { null } ?: "Request failed ($code).",
+                            conflicts = conflicts
+                        )
                     }
                 }
             } catch (cancelled: CancellationException) {
