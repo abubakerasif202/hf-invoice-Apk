@@ -98,6 +98,42 @@ abstract class JobsFlowBase {
     }
 
     @Test
+    fun movingDayRecordsJourneyAndCompletesStopsInDispatchOrder() {
+        val pickup = JobStop("pickup", 1, StopKind.PICKUP, "1 Test Street", "", "", "", null, null)
+        val delivery = JobStop("delivery", 2, StopKind.DELIVERY, "2 Test Street", "", "", "", null, null)
+        val fake = FakeJobsGateway(listOf(FakeJobsGateway.fixture().copy(stops = listOf(delivery, pickup))))
+        openFixture(fake)
+
+        rule.onNodeWithText("Journey").assertExists()
+        rule.onNodeWithTag("job_travelling_btn").performScrollTo().performClick()
+        rule.waitUntil(5_000) {
+            rule.onAllNodesWithText("Travelling since", substring = true).fetchSemanticsNodes().isNotEmpty()
+        }
+        rule.onNodeWithTag("job_arrived_btn").performScrollTo().performClick()
+        rule.waitUntil(5_000) {
+            rule.onAllNodesWithText("travel 30 min", substring = true).fetchSemanticsNodes().isNotEmpty()
+        }
+
+        val firstStop = rule.onNodeWithTag("stop_card_1").fetchSemanticsNode().positionInRoot.y
+        val secondStop = rule.onNodeWithTag("stop_card_2").fetchSemanticsNode().positionInRoot.y
+        assertTrue(firstStop < secondStop)
+        rule.onNodeWithTag("job_start").performScrollTo().performClick()
+        for (seq in 1..2) {
+            waitForTag("stop_arrived_$seq")
+            rule.onNodeWithTag("stop_arrived_$seq").performScrollTo().performClick()
+            waitForTag("stop_done_$seq")
+            rule.onNodeWithTag("stop_done_$seq").performScrollTo().performClick()
+        }
+        finishJob()
+        waitForTag("signoff_logo")
+        assertEquals(
+            listOf("act:travelling", "act:arrived", "act:start", "stop:pickup:arrived",
+                "stop:pickup:completed", "stop:delivery:arrived", "stop:delivery:completed", "act:finish"),
+            fake.calls.filter { it.startsWith("act:") || it.startsWith("stop:") }
+        )
+    }
+
+    @Test
     fun startPauseResumeFinishRecordsActualTimesAndOpensOptionalSignoff() {
         val fake = FakeJobsGateway(listOf(FakeJobsGateway.fixture()))
         openFixture(fake)

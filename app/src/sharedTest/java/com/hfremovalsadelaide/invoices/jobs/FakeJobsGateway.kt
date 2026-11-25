@@ -2,6 +2,7 @@ package com.hfremovalsadelaide.invoices.jobs
 
 import org.json.JSONArray
 import org.json.JSONObject
+import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
 
@@ -44,6 +45,15 @@ class FakeJobsGateway(initial: List<Job>) : JobsGateway {
     override suspend fun act(id: String, action: String): JobsResult<String> {
         calls += "act:$action"
         val job = jobs.first { it.id == id }
+        if (action == "travelling" || action == "arrived") {
+            val travellingAt = if (action == "travelling") tick() else job.milestones?.travellingAt
+            val arrivedAt = if (action == "arrived") tick() else null
+            val travelMinutes = if (travellingAt != null && arrivedAt != null) {
+                Duration.between(travellingAt, arrivedAt).toMinutes().toInt()
+            } else null
+            update(job.copy(milestones = JobMilestones(travellingAt, arrivedAt, travelMinutes)))
+            return JobsResult.Success("{}")
+        }
         val log = events.getOrPut(id) { mutableListOf() }
         val state = when (action) {
             "start" -> JobState.IN_PROGRESS
@@ -54,6 +64,19 @@ class FakeJobsGateway(initial: List<Job>) : JobsGateway {
         }
         log += action to tick()
         update(job.copy(state = state))
+        return JobsResult.Success("{}")
+    }
+
+    override suspend fun stopEvent(id: String, stopId: String, event: String): JobsResult<String> {
+        val job = jobs.first { it.id == id }
+        val stop = job.stops.first { it.id == stopId }
+        val updatedStop = when (event) {
+            "arrived" -> stop.copy(arrivedAt = tick())
+            "completed" -> stop.copy(completedAt = tick())
+            else -> return JobsResult.Failure("Unknown stop event")
+        }
+        calls += "stop:$stopId:$event"
+        update(job.copy(stops = job.stops.map { if (it.id == stopId) updatedStop else it }))
         return JobsResult.Success("{}")
     }
 
