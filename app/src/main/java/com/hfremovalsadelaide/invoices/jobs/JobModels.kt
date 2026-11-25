@@ -146,6 +146,18 @@ data class JobInventoryState(
 
 data class JobAssignment(val staffId: String?, val assignee: String, val role: String)
 
+/** Set by dispatchers on the server (distinct from the app's derived needs-attention level). */
+enum class JobPriority(val server: String, val label: String, val rank: Int) {
+    LOW("low", "Low", 0),
+    NORMAL("normal", "Normal", 1),
+    HIGH("high", "High", 2),
+    URGENT("urgent", "Urgent", 3);
+
+    companion object {
+        fun from(value: String?) = entries.firstOrNull { it.server == value } ?: NORMAL
+    }
+}
+
 /** Scheduled values come from the calendar; actual* values are recorded by the server clock. */
 data class Job(
     val id: String,
@@ -189,7 +201,8 @@ data class Job(
     val timeline: List<TimelineEntry> = emptyList(),
     val conditionReports: List<ConditionReportItem> = emptyList(),
     val photos: List<JobPhotoMeta> = emptyList(),
-    val assignmentDetails: List<JobAssignment>? = null
+    val assignmentDetails: List<JobAssignment>? = null,
+    val priority: JobPriority = JobPriority.NORMAL
 ) {
     val effectiveStart: Instant? get() = appScheduledStart ?: scheduledStart
     val effectiveEnd: Instant? get() = appScheduledEnd ?: scheduledEnd
@@ -252,6 +265,8 @@ interface JobsGateway {
 
     suspend fun rescheduleJob(id: String, startIso: String, endIso: String, reason: String, overrideReason: String? = null): JobsResult<String> =
         JobsResult.Failure("Not supported")
+
+    suspend fun setPriority(id: String, priority: JobPriority): JobsResult<String> = JobsResult.Failure("Not supported")
 
     suspend fun recordCrewEvent(
         id: String,

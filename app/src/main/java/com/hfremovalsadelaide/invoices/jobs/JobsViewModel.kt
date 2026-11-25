@@ -60,6 +60,7 @@ data class JobsUiState(
     val inventory: JobInventoryState? = null,
     val inventoryLoading: Boolean = false,
     val scheduleConflict: ScheduleConflictPrompt? = null,
+    val dispatchFilter: DispatchFilter = DispatchFilter(),
     val message: String? = null
 ) {
     fun filteredJobs(): List<Job> {
@@ -298,6 +299,12 @@ class JobsViewModel(
     }
 
     fun dismissScheduleConflict() = _state.update { it.copy(scheduleConflict = null) }
+
+    fun setDispatchFilter(filter: DispatchFilter) = _state.update { it.copy(dispatchFilter = filter) }
+
+    fun setPriority(jobId: String, priority: JobPriority) = guarded {
+        report(gateway.setPriority(jobId, priority), "Priority set to ${priority.label}.")
+    }
 
     fun recordCrewEvent(
         jobId: String,

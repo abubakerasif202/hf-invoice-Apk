@@ -71,7 +71,9 @@ import com.hfremovalsadelaide.invoices.jobs.BookingStatus
 import com.hfremovalsadelaide.invoices.jobs.AttentionLevel
 import com.hfremovalsadelaide.invoices.jobs.CalendarView
 import com.hfremovalsadelaide.invoices.jobs.ClashKind
+import com.hfremovalsadelaide.invoices.jobs.DispatchFilter
 import com.hfremovalsadelaide.invoices.jobs.DispatchLogic
+import com.hfremovalsadelaide.invoices.jobs.JobPriority
 import com.hfremovalsadelaide.invoices.jobs.Job
 import com.hfremovalsadelaide.invoices.jobs.JobFormat
 import com.hfremovalsadelaide.invoices.jobs.JobState
@@ -105,6 +107,8 @@ fun JobsScreen(
     availableVehicles: List<VehicleRecord> = emptyList(),
     onAssignJob: (jobId: String, List<Triple<String?, String, String>>, vehicleId: String?, truck: String?, travelNotes: String, dispatchNotes: String) -> Unit = { _, _, _, _, _, _ -> },
     onRescheduleJob: (jobId: String, startIso: String, endIso: String, reason: String) -> Unit = { _, _, _, _ -> },
+    onDispatchFilterChanged: (DispatchFilter) -> Unit = {},
+    onSetPriority: (jobId: String, JobPriority) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier
 ) {
     val snap = state.snapshot
@@ -154,7 +158,9 @@ fun JobsScreen(
                 onStatusFilterSelected = onStatusFilterSelected,
                 canDispatch = canDispatch,
                 onRequestAssign = { assignTarget = it },
-                onRequestReschedule = { rescheduleTarget = it }
+                onRequestReschedule = { rescheduleTarget = it },
+                onDispatchFilterChanged = onDispatchFilterChanged,
+                onSetPriority = onSetPriority
             )
         }
     }
@@ -196,7 +202,9 @@ private fun JobsContent(
     onStatusFilterSelected: (JobStatusFilter) -> Unit,
     canDispatch: Boolean,
     onRequestAssign: (Job) -> Unit,
-    onRequestReschedule: (Job) -> Unit
+    onRequestReschedule: (Job) -> Unit,
+    onDispatchFilterChanged: (DispatchFilter) -> Unit,
+    onSetPriority: (jobId: String, JobPriority) -> Unit
 ) {
     val live = state.filteredJobs()
     LazyColumn(
@@ -308,7 +316,10 @@ private fun JobsContent(
             CalendarView.DAY -> day(live, state, onSelectDate, onOpenJob)
             CalendarView.WEEK -> week(live, state, onSelectDate, onOpenJob)
             CalendarView.MONTH -> month(live, state, onSelectDate, onOpenJob)
-            CalendarView.DISPATCH -> dispatchBoard(live, state, onSelectDate, onOpenJob, canDispatch, onRequestAssign, onRequestReschedule)
+            CalendarView.DISPATCH -> dispatchBoard(
+                live, state, onSelectDate, onOpenJob, canDispatch, onRequestAssign, onRequestReschedule,
+                onDispatchFilterChanged, onSetPriority
+            )
         }
     }
 }
@@ -320,13 +331,21 @@ private fun androidx.compose.foundation.lazy.LazyListScope.dispatchBoard(
     onOpen: (String) -> Unit,
     canDispatch: Boolean,
     onRequestAssign: (Job) -> Unit,
-    onRequestReschedule: (Job) -> Unit
+    onRequestReschedule: (Job) -> Unit,
+    onFilterChanged: (DispatchFilter) -> Unit,
+    onSetPriority: (jobId: String, JobPriority) -> Unit
 ) {
     item {
         // Short date: the long form wrapped to two lines and pushed the first job below the fold.
         DateNav(JobFormat.day(state.selectedDate), { onSelectDate(state.selectedDate.minusDays(1)) }, { onSelectDate(state.selectedDate.plusDays(1)) })
     }
-    val dayJobs = jobs.filter { JobFormat.localDate(it) == state.selectedDate }.sortedBy { it.effectiveStart }
+    item(key = "dispatch_filter") {
+        DispatchFilterMenu(filter = state.dispatchFilter, crew = DispatchLogic.crewChoices(jobs), trucks = DispatchLogic.truckChoices(jobs), onChange = onFilterChanged)
+    }
+    // Multi-day jobs appear on every day they cover; priority then start time orders each lane.
+    val dayJobs = DispatchLogic.laneOrder(
+        jobs.filter { JobFormat.coversDate(it, state.selectedDate) && DispatchLogic.matches(it, state.dispatchFilter) }
+    )
     val conflictIds = state.snapshot?.conflicts.orEmpty().flatMap { listOf(it.first, it.second) }.toSet()
     val now = Instant.now()
     val attention = dayJobs.associate { it.id to DispatchLogic.attention(it, conflictIds, now) }
@@ -369,12 +388,60 @@ private fun androidx.compose.foundation.lazy.LazyListScope.dispatchBoard(
                                 job = job,
                                 canDispatch = canDispatch,
                                 attention = attention.getValue(job.id),
+                                day = state.selectedDate,
                                 onOpen = { onOpen(job.id) },
                                 onAssign = { onRequestAssign(job) },
-                                onReschedule = { onRequestReschedule(job) }
+                                onReschedule = { onRequestReschedule(job) },
+                                onSetPriority = { onSetPriority(job.id, it) }
                             )
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+/** One compact menu for every dispatch filter: unassigned, subcontractor jobs, a single truck or a single crew member. */
+@Composable
+private fun DispatchFilterMenu(filter: DispatchFilter, crew: List<String>, trucks: List<String>, onChange: (DispatchFilter) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    val summary = listOfNotNull(
+        "Unassigned".takeIf { filter.unassignedOnly },
+        "Subcontractors".takeIf { filter.subcontractorsOnly },
+        filter.truck,
+        filter.crew
+    ).joinToString(" · ")
+    Box {
+        AssistChip(
+            onClick = { open = true },
+            label = { Text(if (filter.active) "Filter: $summary" else "Filter", maxLines = 1) },
+            leadingIcon = { Icon(Icons.Rounded.FilterList, contentDescription = null, modifier = Modifier.size(18.dp)) },
+            modifier = Modifier.testTag("dispatch_filter_button")
+        )
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            fun pick(next: DispatchFilter) { open = false; onChange(next) }
+            fun check(selected: Boolean, label: String) = if (selected) "✓ $label" else label
+            DropdownMenuItem(text = { Text("Show all jobs") }, onClick = { pick(DispatchFilter()) })
+            DropdownMenuItem(
+                text = { Text(check(filter.unassignedOnly, "Unassigned only")) },
+                onClick = { pick(filter.copy(unassignedOnly = !filter.unassignedOnly)) },
+                modifier = Modifier.testTag("dispatch_filter_unassigned")
+            )
+            DropdownMenuItem(
+                text = { Text(check(filter.subcontractorsOnly, "Subcontractor jobs")) },
+                onClick = { pick(filter.copy(subcontractorsOnly = !filter.subcontractorsOnly)) }
+            )
+            if (trucks.isNotEmpty()) {
+                Text("Truck", style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+                trucks.forEach { t ->
+                    DropdownMenuItem(text = { Text(check(filter.truck.equals(t, true), t)) }, onClick = { pick(filter.copy(truck = if (filter.truck.equals(t, true)) null else t)) })
+                }
+            }
+            if (crew.isNotEmpty()) {
+                Text("Crew member", style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+                crew.forEach { c ->
+                    DropdownMenuItem(text = { Text(check(filter.crew.equals(c, true), c)) }, onClick = { pick(filter.copy(crew = if (filter.crew.equals(c, true)) null else c)) })
                 }
             }
         }
@@ -387,10 +454,13 @@ private fun DispatchJobCard(
     job: Job,
     canDispatch: Boolean,
     attention: com.hfremovalsadelaide.invoices.jobs.Attention,
+    day: LocalDate,
     onOpen: () -> Unit,
     onAssign: () -> Unit,
-    onReschedule: () -> Unit
+    onReschedule: () -> Unit,
+    onSetPriority: (JobPriority) -> Unit
 ) {
+    var priorityMenuOpen by remember { mutableStateOf(false) }
     val start = job.effectiveStart
     val end = job.effectiveEnd
     val duration = if (start != null && end != null) JobFormat.duration(Duration.between(start, end).toMinutes().toInt().coerceAtLeast(0)) else "Duration TBC"
@@ -410,6 +480,20 @@ private fun DispatchJobCard(
                     modifier = Modifier.weight(1f)
                 )
                 StatusPill(job)
+            }
+            val position = JobFormat.dayPosition(job, day)
+            val chips = listOfNotNull(
+                position?.let { (n, total) -> "Day $n of $total" },
+                job.priority.takeIf { it.rank >= JobPriority.HIGH.rank }?.let { "Priority: ${it.label}" }
+            )
+            if (chips.isNotEmpty()) {
+                Text(
+                    chips.joinToString(" · "),
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (job.priority == JobPriority.URGENT) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.testTag("dispatch_card_chips")
+                )
             }
             Text("${JobFormat.scheduleText(job)} ($duration)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
             Text(
@@ -450,6 +534,22 @@ private fun DispatchJobCard(
                         Spacer(Modifier.size(4.dp))
                         Text("Reschedule")
                     }
+                    Box {
+                        OutlinedButton(onClick = { priorityMenuOpen = true }, modifier = Modifier.testTag("dispatch_priority_button")) {
+                            Text("Priority: ${job.priority.label}")
+                        }
+                        DropdownMenu(expanded = priorityMenuOpen, onDismissRequest = { priorityMenuOpen = false }) {
+                            JobPriority.entries.reversed().forEach { p ->
+                                DropdownMenuItem(
+                                    text = { Text(if (p == job.priority) "✓ ${p.label}" else p.label) },
+                                    onClick = {
+                                        priorityMenuOpen = false
+                                        if (p != job.priority) onSetPriority(p)
+                                    }
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -459,17 +559,22 @@ private fun DispatchJobCard(
 private fun androidx.compose.foundation.lazy.LazyListScope.agenda(jobs: List<Job>, from: LocalDate, onOpen: (String) -> Unit) {
     val today = LocalDate.now(JobFormat.zone)
     val cutoff = minOf(from, today).minusDays(7)
-    val groups = jobs.groupBy { JobFormat.localDate(it) }.filterKeys { it != null && !it.isBefore(cutoff) }.toSortedMap(compareBy { it })
+    // A multi-day job is listed under every day it covers.
+    val groups = jobs.flatMap { job -> JobFormat.datesCovered(job).map { it to job } }
+        .groupBy({ it.first }, { it.second })
+        .filterKeys { !it.isBefore(cutoff) }
+        .toSortedMap()
     if (groups.isEmpty()) item { EmptyText("No upcoming bookings found.") }
     groups.forEach { (date, list) ->
-        item { DayHeader(date!!) }
-        items(list.sortedBy { it.scheduledStart }, key = { it.id }) { JobCard(it, onOpen) }
+        item(key = "header_$date") { DayHeader(date) }
+        // The same job can appear on several days, so the key must include the date.
+        items(list.sortedBy { it.effectiveStart }, key = { "${date}_${it.id}" }) { JobCard(it, onOpen) }
     }
 }
 
 private fun androidx.compose.foundation.lazy.LazyListScope.day(jobs: List<Job>, state: JobsUiState, onSelectDate: (LocalDate) -> Unit, onOpen: (String) -> Unit) {
     item { DateNav(JobFormat.longDay(state.selectedDate), { onSelectDate(state.selectedDate.minusDays(1)) }, { onSelectDate(state.selectedDate.plusDays(1)) }) }
-    val list = jobs.filter { JobFormat.localDate(it) == state.selectedDate }.sortedBy { it.scheduledStart }
+    val list = jobs.filter { JobFormat.coversDate(it, state.selectedDate) }.sortedBy { it.effectiveStart }
     if (list.isEmpty()) item { EmptyText("No jobs on this day.") }
     items(list, key = { it.id }) { JobCard(it, onOpen) }
 }
@@ -480,12 +585,12 @@ private fun androidx.compose.foundation.lazy.LazyListScope.week(jobs: List<Job>,
     item {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             (0L..6L).map { start.plusDays(it) }.forEach { d ->
-                val n = jobs.count { JobFormat.localDate(it) == d }
+                val n = jobs.count { JobFormat.coversDate(it, d) }
                 DayCell(d, n, d == state.selectedDate, Modifier.weight(1f)) { onSelectDate(d) }
             }
         }
     }
-    val list = jobs.filter { JobFormat.localDate(it) == state.selectedDate }.sortedBy { it.scheduledStart }
+    val list = jobs.filter { JobFormat.coversDate(it, state.selectedDate) }.sortedBy { it.effectiveStart }
     item { DayHeader(state.selectedDate) }
     if (list.isEmpty()) item { EmptyText("No jobs on this day.") }
     items(list, key = { it.id }) { JobCard(it, onOpen) }
@@ -499,12 +604,12 @@ private fun androidx.compose.foundation.lazy.LazyListScope.month(jobs: List<Job>
     items(cells.chunked(7)) { week ->
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             week.forEach { d ->
-                if (d == null) Spacer(Modifier.weight(1f)) else DayCell(d, jobs.count { JobFormat.localDate(it) == d }, d == state.selectedDate, Modifier.weight(1f)) { onSelectDate(d) }
+                if (d == null) Spacer(Modifier.weight(1f)) else DayCell(d, jobs.count { JobFormat.coversDate(it, d) }, d == state.selectedDate, Modifier.weight(1f)) { onSelectDate(d) }
             }
             repeat(7 - week.size) { Spacer(Modifier.weight(1f)) }
         }
     }
-    val list = jobs.filter { JobFormat.localDate(it) == state.selectedDate }.sortedBy { it.scheduledStart }
+    val list = jobs.filter { JobFormat.coversDate(it, state.selectedDate) }.sortedBy { it.effectiveStart }
     item { DayHeader(state.selectedDate) }
     if (list.isEmpty()) item { EmptyText("No jobs on this day.") }
     items(list, key = { "m" + it.id }) { JobCard(it, onOpen) }

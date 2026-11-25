@@ -28,8 +28,32 @@ object JobFormat {
 
     fun duration(minutes: Int) = "${minutes / 60}h ${(minutes % 60).toString().padStart(2, '0')}m"
 
+    /** Day the job starts, in Adelaide. Uses the in-app reschedule when there is one, like the backend does. */
     fun localDate(job: Job): LocalDate? =
-        job.scheduledStart?.atZone(zone)?.toLocalDate() ?: job.serviceDate?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+        job.effectiveStart?.atZone(zone)?.toLocalDate() ?: job.serviceDate?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+
+    /** Longest span shown on the board; a bad calendar entry must never make the board build thousands of days. */
+    const val MAX_SPAN_DAYS = 31
+
+    /** Every Adelaide day a job occupies. A job ending exactly at midnight does not occupy the next day. */
+    fun datesCovered(job: Job): List<LocalDate> {
+        val first = localDate(job) ?: return emptyList()
+        val start = job.effectiveStart
+        val end = job.effectiveEnd
+        if (job.dateOnly || start == null || end == null || !end.isAfter(start)) return listOf(first)
+        val last = end.minusSeconds(1).atZone(zone).toLocalDate()
+        if (!last.isAfter(first)) return listOf(first)
+        return generateSequence(first) { it.plusDays(1) }.takeWhile { !it.isAfter(last) }.take(MAX_SPAN_DAYS).toList()
+    }
+
+    fun coversDate(job: Job, date: LocalDate): Boolean = date in datesCovered(job)
+
+    /** (day number, total days) for a job that spans several days, else null. */
+    fun dayPosition(job: Job, date: LocalDate): Pair<Int, Int>? {
+        val days = datesCovered(job)
+        val index = days.indexOf(date)
+        return if (days.size > 1 && index >= 0) (index + 1) to days.size else null
+    }
 
     fun scheduleText(job: Job) = when {
         job.dateOnly -> "All day (no time set)"

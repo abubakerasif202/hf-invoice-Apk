@@ -131,6 +131,7 @@ object JobsApi : JobsGateway {
             },
             travelNotes = o.optString("travelNotes", ""),
             dispatchNotes = o.optString("dispatchNotes", ""),
+            priority = JobPriority.from(o.str("priority")),
             missingInfo = o.optJSONArray("missingInfo").strings(),
             waitingMinutes = actual.optInt("waitingMinutes", 0),
             overtimeMinutes = actual.optInt("overtimeMinutes", 0),
@@ -263,6 +264,9 @@ object JobsApi : JobsGateway {
         if (overrideReason != null) body.put("override", JSONObject().put("reason", overrideReason))
         return call("POST", "/api/jobs/$id", body) { JobsResult.Success(it) }
     }
+
+    override suspend fun setPriority(id: String, priority: JobPriority): JobsResult<String> =
+        call("POST", "/api/jobs/$id", JSONObject().put("action", "set_priority").put("priority", priority.server)) { JobsResult.Success(it) }
 
     override suspend fun rescheduleJob(id: String, startIso: String, endIso: String, reason: String, overrideReason: String?): JobsResult<String> {
         val body = JSONObject().put("action", "reschedule").put("start", startIso).put("end", endIso).put("reason", reason)

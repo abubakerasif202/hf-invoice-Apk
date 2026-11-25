@@ -216,8 +216,8 @@ fun DashboardScreen(
     val analytics = platformState.analytics
     val today = LocalDate.now(JobFormat.zone)
     val todayJobs = jobsSnapshot?.jobs
-        ?.filter { !it.cancelled && JobFormat.localDate(it) == today }
-        ?.sortedBy { it.scheduledStart }
+        ?.filter { !it.cancelled && JobFormat.coversDate(it, today) }
+        ?.sortedBy { it.effectiveStart }
         .orEmpty()
 
     Column(

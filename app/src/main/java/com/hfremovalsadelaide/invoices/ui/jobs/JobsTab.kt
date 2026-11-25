@@ -151,6 +151,8 @@ fun JobsTab(
                 availableVehicles = availableVehicles,
                 onAssignJob = viewModel::assignJob,
                 onRescheduleJob = viewModel::rescheduleJob,
+                onDispatchFilterChanged = viewModel::setDispatchFilter,
+                onSetPriority = viewModel::setPriority,
                 modifier = Modifier.fillMaxSize()
             )
         }

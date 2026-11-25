@@ -8,6 +8,16 @@ enum class ClashKind { CREW, TRUCK }
 /** A crew member or truck that is already committed to another job during the same time window. */
 data class AssignmentClash(val kind: ClashKind, val label: String, val otherJobId: String, val otherTitle: String)
 
+/** Dispatch board narrowing; every set field must match. */
+data class DispatchFilter(
+    val unassignedOnly: Boolean = false,
+    val subcontractorsOnly: Boolean = false,
+    val crew: String? = null,
+    val truck: String? = null
+) {
+    val active: Boolean get() = unassignedOnly || subcontractorsOnly || crew != null || truck != null
+}
+
 enum class AttentionLevel { NONE, MEDIUM, HIGH }
 
 /**
@@ -65,6 +75,26 @@ object DispatchLogic {
                 }
             }
     }
+
+    /** Narrow the board. All set conditions must hold (AND); crew and truck match case-insensitively. */
+    fun matches(job: Job, filter: DispatchFilter): Boolean {
+        if (filter.unassignedOnly && !(job.assignees.isEmpty() && job.staffIds.isEmpty() || job.truck.isNullOrBlank() && job.vehicleId == null)) return false
+        if (filter.subcontractorsOnly && job.assignmentDetails.orEmpty().none { it.role == "subcontractor" }) return false
+        filter.crew?.let { wanted -> if (job.assignees.none { norm(it) == norm(wanted) }) return false }
+        filter.truck?.let { wanted -> if (norm(job.truck) != norm(wanted)) return false }
+        return true
+    }
+
+    private fun distinctSorted(values: List<String>): List<String> =
+        values.map { it.trim() }.filter { it.isNotEmpty() }.distinctBy { it.lowercase() }.sortedBy { it.lowercase() }
+
+    fun crewChoices(jobs: List<Job>): List<String> = distinctSorted(jobs.flatMap { it.assignees })
+
+    fun truckChoices(jobs: List<Job>): List<String> = distinctSorted(jobs.mapNotNull { it.truck })
+
+    /** Urgent and high priority first, then earliest start; jobs with no time go last. */
+    fun laneOrder(jobs: List<Job>): List<Job> =
+        jobs.sortedWith(compareByDescending<Job> { it.priority.rank }.thenBy(nullsLast()) { it.effectiveStart })
 
     /** How urgently a scheduled job needs a dispatcher's attention. [conflictJobIds] comes from the server's detector. */
     fun attention(job: Job, conflictJobIds: Set<String>, now: Instant): Attention {
