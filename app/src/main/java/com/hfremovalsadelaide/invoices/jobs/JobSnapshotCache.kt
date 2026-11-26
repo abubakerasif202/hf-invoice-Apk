@@ -47,6 +47,7 @@ object JobSnapshotCodec {
                     .put("travelNotes", j.travelNotes)
                     .put("dispatchNotes", j.dispatchNotes)
                     .put("missingInfo", JSONArray(j.missingInfo))
+                    .put("lifecycle", j.lifecycle?.toJson() ?: JSONObject.NULL)
                     .put("waitingMinutes", j.waitingMinutes)
                     .put("overtimeMinutes", j.overtimeMinutes)
                     .put("waitActive", j.waitActive)
@@ -113,6 +114,7 @@ object JobSnapshotCodec {
                     travelNotes = o.optString("travelNotes", ""),
                     dispatchNotes = o.optString("dispatchNotes", ""),
                     missingInfo = o.optJSONArray("missingInfo").toStrings(),
+                    lifecycle = BookingLifecycle.fromJson(o.optJSONObject("lifecycle")),
                     waitingMinutes = o.optInt("waitingMinutes", 0),
                     overtimeMinutes = o.optInt("overtimeMinutes", 0),
                     waitActive = o.optBoolean("waitActive", false),

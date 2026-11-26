@@ -78,6 +78,8 @@ import com.hfremovalsadelaide.invoices.jobs.Job
 import com.hfremovalsadelaide.invoices.jobs.JobFormat
 import com.hfremovalsadelaide.invoices.jobs.JobState
 import com.hfremovalsadelaide.invoices.jobs.JobStatusFilter
+import com.hfremovalsadelaide.invoices.jobs.JobStatusPill
+import com.hfremovalsadelaide.invoices.jobs.PillTone
 import com.hfremovalsadelaide.invoices.jobs.JobsSnapshot
 import com.hfremovalsadelaide.invoices.jobs.JobsUiState
 import com.hfremovalsadelaide.invoices.jobs.SignoffStatus
@@ -683,19 +685,19 @@ fun JobCard(job: Job, onOpen: (String) -> Unit) {
 }
 
 @Composable
-private fun StatusPill(job: Job) {
-    val (text, bg, fg) = when {
-        job.cancelled -> Triple("Cancelled", MaterialTheme.colorScheme.errorContainer, MaterialTheme.colorScheme.onErrorContainer)
-        job.state == JobState.IN_PROGRESS -> Triple("In progress", GoldAccent, PureWhite)
-        job.state == JobState.PAUSED -> Triple("Paused", MaterialTheme.colorScheme.secondaryContainer, MaterialTheme.colorScheme.onSecondaryContainer)
-        job.state == JobState.COMPLETED && job.signoff == SignoffStatus.SIGNED -> Triple("Signed", ForestGreen, PureWhite)
-        job.state == JobState.COMPLETED && job.signoff == SignoffStatus.SKIPPED -> Triple("Completed · not signed", MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.onPrimaryContainer)
-        job.state == JobState.COMPLETED -> Triple("Awaiting sign-off", MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.onPrimaryContainer)
-        else -> Triple("Scheduled", MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.colorScheme.onSurfaceVariant)
+internal fun StatusPill(job: Job, modifier: Modifier = Modifier) {
+    val pill = JobStatusPill.forJob(job)
+    val (bg, fg) = when (pill.tone) {
+        PillTone.DANGER -> MaterialTheme.colorScheme.errorContainer to MaterialTheme.colorScheme.onErrorContainer
+        PillTone.ACTIVE -> GoldAccent to PureWhite
+        PillTone.SECONDARY -> MaterialTheme.colorScheme.secondaryContainer to MaterialTheme.colorScheme.onSecondaryContainer
+        PillTone.SUCCESS -> ForestGreen to PureWhite
+        PillTone.PRIMARY -> MaterialTheme.colorScheme.primaryContainer to MaterialTheme.colorScheme.onPrimaryContainer
+        PillTone.NEUTRAL -> MaterialTheme.colorScheme.surfaceVariant to MaterialTheme.colorScheme.onSurfaceVariant
     }
     Text(
-        text,
-        Modifier.clip(RoundedCornerShape(50)).background(bg).padding(horizontal = 10.dp, vertical = 4.dp),
+        pill.text,
+        modifier.testTag("job_status_pill").clip(RoundedCornerShape(50)).background(bg).padding(horizontal = 10.dp, vertical = 4.dp),
         color = fg,
         style = MaterialTheme.typography.labelSmall,
         fontWeight = FontWeight.SemiBold
