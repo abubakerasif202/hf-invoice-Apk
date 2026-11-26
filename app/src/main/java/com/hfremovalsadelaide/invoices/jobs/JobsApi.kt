@@ -321,7 +321,8 @@ object JobsApi : JobsGateway {
         eventType: String,
         customerAcknowledged: Boolean,
         acknowledgmentName: String,
-        notes: String
+        notes: String,
+        at: Instant?
     ): JobsResult<String> = call(
         "POST",
         "/api/jobs/$id",
@@ -332,6 +333,7 @@ object JobsApi : JobsGateway {
             .put("customerAcknowledged", customerAcknowledged)
             .put("acknowledgmentName", acknowledgmentName)
             .put("notes", notes)
+            .put("at", at?.toString())
     ) { JobsResult.Success(it) }
 
     override suspend fun fetchInventory(id: String): JobsResult<JobInventoryState> =

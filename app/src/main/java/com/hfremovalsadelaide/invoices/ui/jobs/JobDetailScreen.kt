@@ -78,7 +78,7 @@ fun JobDetailScreen(
     onAct: (String) -> Unit,
     onCorrect: (field: String, atIso: String, reason: String) -> Unit,
     onOpenSignoff: () -> Unit,
-    onDownloadCompletionPdf: () -> Unit,
+    onDownloadCompletionPdf: (includePhotos: Boolean) -> Unit,
     onCreateInvoice: () -> Unit,
     onConfirmDraft: () -> Unit,
     onDismissDraft: () -> Unit,
@@ -88,7 +88,7 @@ fun JobDetailScreen(
     onOpenReschedule: () -> Unit = {},
     onOpenInventory: () -> Unit = {},
     onOpenCondition: () -> Unit = {},
-    onRecordCrewEvent: (memberName: String, eventType: String, ack: Boolean, ackName: String, notes: String) -> Unit = { _, _, _, _, _ -> },
+    onRecordCrewEvent: (memberName: String, eventType: String, ack: Boolean, ackName: String, notes: String, at: Instant?) -> Unit = { _, _, _, _, _, _ -> },
     onStopEvent: (stopId: String, event: String) -> Unit = { _, _ -> },
     onSaveStops: (List<StopDraft>) -> Unit = {},
     modifier: Modifier = Modifier
@@ -223,7 +223,7 @@ fun JobDetailScreen(
             }
             Section("Booking & Dispatch") {
                 Row("Truck package", job.truck)
-                Row("Crew size", job.crewSize?.toString())
+                Row("Booked crew size", job.crewSize?.toString())
                 Row("Assigned", job.assignees.takeIf { it.isNotEmpty() }?.joinToString())
                 if (job.dispatchNotes.isNotBlank()) Row("Dispatch notes", job.dispatchNotes)
                 Row("Notes", job.notes)
@@ -256,7 +256,7 @@ fun JobDetailScreen(
                 Section("Crew Changes") {
                     job.crewEvents.forEach { ev ->
                         Text(
-                            "• ${ev.memberName} ${ev.eventType} at ${JobFormat.time(ev.at)}${if (ev.customerAcknowledged) " (Customer ack)" else ""}",
+                            "${ev.memberName} ${ev.eventType} · ${timelineDateTime(ev.at)}${if (ev.customerAcknowledged) " · Customer acknowledged" else ""}",
                             style = MaterialTheme.typography.bodySmall
                         )
                     }
@@ -265,7 +265,12 @@ fun JobDetailScreen(
             if (job.timeline.isNotEmpty()) {
                 Section("Job Timeline") {
                     job.timeline.forEach { entry ->
-                        Text("• ${entry.label} (${entry.actor}) — ${entry.detail.ifBlank { entry.at.take(19) }}", style = MaterialTheme.typography.bodySmall)
+                        val at = runCatching { Instant.parse(entry.at) }.getOrNull()
+                        val dateTime = at?.let(::timelineDateTime)
+                        Text(entry.label, style = MaterialTheme.typography.titleSmall)
+                        Text(listOfNotNull(dateTime, entry.actor.takeIf { it.isNotBlank() }).joinToString(" · "),
+                            style = MaterialTheme.typography.bodySmall)
+                        if (entry.detail.isNotBlank()) Text(entry.detail, style = MaterialTheme.typography.bodySmall)
                     }
                 }
             }
@@ -295,9 +300,9 @@ fun JobDetailScreen(
         CrewEventDialog(
             defaultCustomerName = job.customerName.orEmpty(),
             onDismiss = { recordingCrewEvent = false },
-            onSave = { name, type, ack, ackName, notes ->
+            onSave = { name, type, ack, ackName, notes, at ->
                 recordingCrewEvent = false
-                onRecordCrewEvent(name, type, ack, ackName, notes)
+                onRecordCrewEvent(name, type, ack, ackName, notes, at)
             }
         )
     }
@@ -462,7 +467,7 @@ private fun ActionArea(
     onAct: (String) -> Unit,
     onConfirmFinish: () -> Unit,
     onOpenSignoff: () -> Unit,
-    onPdf: () -> Unit,
+    onPdf: (includePhotos: Boolean) -> Unit,
     onInvoice: () -> Unit
 ) {
     val canRecordTime = "jobs.act" in permissions
@@ -526,7 +531,12 @@ private fun ActionArea(
                         colors = ButtonDefaults.buttonColors(containerColor = ForestGreen, contentColor = PureWhite)
                     ) { Text("Customer sign-off") }
                 }
-                OutlinedButton(onClick = onPdf, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("job_pdf")) { Text("Completion PDF") }
+                OutlinedButton(onClick = { onPdf(false) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("job_pdf")) { Text("Completion PDF") }
+                if (job.photos.any { it.mimeType == "image/jpeg" || it.mimeType == "image/png" }) {
+                    OutlinedButton(onClick = { onPdf(true) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                        Text("Completion PDF with photos")
+                    }
+                }
                 if ("invoice.draft" in permissions && "invoices.manage" in permissions) {
                     OutlinedButton(onClick = onInvoice, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("job_create_invoice")) { Text("Create Invoice From Job") }
                 }
@@ -579,25 +589,41 @@ private fun Row(label: String, value: String?) {
 private fun CrewEventDialog(
     defaultCustomerName: String,
     onDismiss: () -> Unit,
-    onSave: (String, String, Boolean, String, String) -> Unit
+    onSave: (String, String, Boolean, String, String, Instant?) -> Unit
 ) {
     var memberName by remember { mutableStateOf("") }
     var eventType by remember { mutableStateOf("joined") }
     var ack by remember { mutableStateOf(false) }
     var ackName by remember { mutableStateOf(defaultCustomerName) }
     var notes by remember { mutableStateOf("") }
+    var recordedAt by remember { mutableStateOf("") }
+    val at = JobFormat.parseEditable(recordedAt.trim())?.takeIf {
+        JobFormat.editable(it) == recordedAt.trim() && !it.isAfter(Instant.now())
+    }
+    val invalidTime = recordedAt.isNotBlank() && at == null
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Record Crew Size Change") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Logs extra movers joining or leaving on site without altering agreed rates silently.", style = MaterialTheme.typography.bodySmall)
-                OutlinedTextField(memberName, { memberName = it }, label = { Text("Mover / worker name") }, singleLine = true)
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Crew changes are recorded for review. Billing rates are set separately.", style = MaterialTheme.typography.bodySmall)
+                OutlinedTextField(memberName, { memberName = it }, label = { Text("Mover / worker name") }, singleLine = true,
+                    modifier = Modifier.testTag("crew_event_name"))
                 androidx.compose.foundation.layout.Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(selected = eventType == "joined", onClick = { eventType = "joined" }, label = { Text("Joined") })
                     FilterChip(selected = eventType == "left", onClick = { eventType = "left" }, label = { Text("Left") })
                 }
+                OutlinedTextField(
+                    recordedAt,
+                    { recordedAt = it },
+                    label = { Text("Actual time in Adelaide") },
+                    placeholder = { Text("YYYY-MM-DD HH:mm") },
+                    supportingText = { Text(if (invalidTime) "Enter a valid date and time in the past." else "Leave blank to record the current time.") },
+                    singleLine = true,
+                    isError = invalidTime,
+                    modifier = Modifier.testTag("crew_event_time")
+                )
                 androidx.compose.foundation.layout.Row(verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(checked = ack, onCheckedChange = { ack = it })
                     Text("Customer acknowledged crew change on site", style = MaterialTheme.typography.bodySmall)
@@ -607,11 +633,18 @@ private fun CrewEventDialog(
             }
         },
         confirmButton = {
-            Button(onClick = { onSave(memberName, eventType, ack, ackName, notes) }, enabled = memberName.isNotBlank()) { Text("Save") }
+            Button(
+                onClick = { onSave(memberName, eventType, ack, ackName, notes, at) },
+                enabled = memberName.isNotBlank() && !invalidTime && (!ack || ackName.isNotBlank())
+            ) { Text("Save") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
 }
+
+private fun timelineDateTime(at: Instant?): String = at?.let {
+    "${JobFormat.longDay(it.atZone(JobFormat.zone).toLocalDate())}, ${JobFormat.time(it)}"
+} ?: "Time not recorded"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

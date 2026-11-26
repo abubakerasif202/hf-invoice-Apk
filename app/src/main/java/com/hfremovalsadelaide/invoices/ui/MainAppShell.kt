@@ -522,9 +522,10 @@ fun MainAppShell(
                                 state = jobsState,
                                 viewModel = jobsViewModel,
                                 onGoToSignIn = { platformViewModel.openSignInSheet() },
-                                onDownloadCompletionPdf = { jobId ->
+                                onDownloadCompletionPdf = { jobId, includePhotos ->
+                                    val photoQuery = if (includePhotos) "?photos=1" else ""
                                     workspaceViewModel.downloadAuthenticatedDocument(
-                                        url = "${TrustedOriginPolicy.PRODUCTION_URL}/api/jobs/$jobId/completion-pdf",
+                                        url = "${TrustedOriginPolicy.PRODUCTION_URL}/api/jobs/$jobId/completion-pdf$photoQuery",
                                         expectedMimeType = "application/pdf",
                                         openPrintImmediately = false
                                     )

@@ -15,6 +15,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.swipe
@@ -27,6 +28,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.time.Instant
 
 /**
  * On-device end-to-end tests of the job workflow. They run against an in-memory fixture (FakeJobsGateway),
@@ -38,7 +40,7 @@ abstract class JobsFlowBase {
     @get:Rule
     val rule = createComposeRule()
 
-    private val pdfRequests = mutableListOf<String>()
+    private val pdfRequests = mutableListOf<Pair<String, Boolean>>()
 
     private fun launch(fake: FakeJobsGateway): JobsViewModel {
         val vm = JobsViewModel(fake)
@@ -49,8 +51,8 @@ abstract class JobsFlowBase {
                     state = state,
                     viewModel = vm,
                     onGoToSignIn = {},
-                    onDownloadCompletionPdf = { pdfRequests += it },
-                    permissions = setOf("jobs.read", "jobs.act", "jobs.signoff", "invoice.draft", "invoices.manage")
+                    onDownloadCompletionPdf = { jobId, includePhotos -> pdfRequests += jobId to includePhotos },
+                    permissions = setOf("jobs.read", "jobs.act", "jobs.crew", "jobs.signoff", "invoice.draft", "invoices.manage")
                 )
             }
         }
@@ -95,6 +97,21 @@ abstract class JobsFlowBase {
         rule.onAllNodesWithText("Not provided", substring = true).onFirst().assertExists() // nothing recorded yet, never invented
         rule.onNodeWithTag("job_call").assertExists()
         rule.onNodeWithTag("job_start").assertIsEnabled()
+    }
+
+    @Test
+    fun crewDepartureUsesTheActualLocalTimeEntered() {
+        val fake = FakeJobsGateway(listOf(FakeJobsGateway.fixture(JobState.IN_PROGRESS)))
+        openFixture(fake)
+        rule.onNodeWithTag("job_crew_event_btn").performScrollTo().performClick()
+        rule.onNodeWithTag("crew_event_name").performTextInput("Test Mover")
+        rule.onNodeWithText("Left").performClick()
+        rule.onNodeWithTag("crew_event_time").performScrollTo().performTextInput("2026-11-24 10:30")
+        rule.onNodeWithText("Save").performClick()
+        rule.waitUntil(5_000) { fake.lastCrewEvent != null }
+        assertEquals("Test Mover", fake.lastCrewEvent?.memberName)
+        assertEquals("left", fake.lastCrewEvent?.eventType)
+        assertEquals(Instant.parse("2026-11-24T00:00:00Z"), fake.lastCrewEvent?.at)
     }
 
     @Test
@@ -179,14 +196,17 @@ abstract class JobsFlowBase {
 
     @Test
     fun completedJobCanRequestPdfAndOnlyASavedDraftInvoice() {
-        val fake = FakeJobsGateway(listOf(FakeJobsGateway.fixture(JobState.IN_PROGRESS)))
+        val photo = JobPhotoMeta("synthetic", "after", null, "Fixture photo", "image/png", "2026-11-24T01:00:00Z")
+        val fake = FakeJobsGateway(listOf(FakeJobsGateway.fixture(JobState.IN_PROGRESS).copy(photos = listOf(photo))))
         openFixture(fake)
         finishJob()
         waitForTag("signoff_later")
         rule.onNodeWithTag("signoff_later").performScrollTo().performClick()
         waitForTag("job_pdf")
         rule.onNodeWithTag("job_pdf").performClick()
-        assertEquals(listOf("fixture-1"), pdfRequests)
+        assertEquals(listOf("fixture-1" to false), pdfRequests)
+        rule.onNodeWithText("Completion PDF with photos").performScrollTo().performClick()
+        assertEquals(listOf("fixture-1" to false, "fixture-1" to true), pdfRequests)
         rule.onNodeWithTag("job_create_invoice").performClick()
         waitForTag("draft_confirm")
         rule.onNodeWithText("Review draft invoice").assertExists()
