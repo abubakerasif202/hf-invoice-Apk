@@ -358,6 +358,14 @@ class JobsViewModel(
 
     fun setDispatchFilter(filter: DispatchFilter) = _state.update { it.copy(dispatchFilter = filter) }
 
+    /** Cancels a booking that has not started; the server re-checks permission and state. */
+    fun cancelBooking(jobId: String, reason: String) {
+        val text = reason.trim()
+        if (text.isEmpty()) { say("Give a reason for cancelling this booking."); return }
+        if (text.length > BookingCancel.MAX_REASON) { say("Keep the cancellation reason under ${BookingCancel.MAX_REASON} characters."); return }
+        guarded { report(gateway.cancelBooking(jobId, text), "Booking cancelled.") }
+    }
+
     fun setPriority(jobId: String, priority: JobPriority) = guarded {
         report(gateway.setPriority(jobId, priority), "Priority set to ${priority.label}.")
     }

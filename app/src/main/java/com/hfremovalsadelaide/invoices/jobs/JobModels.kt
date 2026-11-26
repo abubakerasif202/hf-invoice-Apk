@@ -204,7 +204,9 @@ data class Job(
     val assignmentDetails: List<JobAssignment>? = null,
     val priority: JobPriority = JobPriority.NORMAL,
     val milestones: JobMilestones? = null,
-    val stops: List<JobStop> = emptyList()
+    val stops: List<JobStop> = emptyList(),
+    /** Derived 13-step booking status from the server; absent for crew roles and older backends. */
+    val lifecycle: BookingLifecycle? = null
 ) {
     val effectiveStart: Instant? get() = appScheduledStart ?: scheduledStart
     val effectiveEnd: Instant? get() = appScheduledEnd ?: scheduledEnd
@@ -269,6 +271,8 @@ interface JobsGateway {
         JobsResult.Failure("Not supported")
 
     suspend fun setPriority(id: String, priority: JobPriority): JobsResult<String> = JobsResult.Failure("Not supported")
+
+    suspend fun cancelBooking(id: String, reason: String): JobsResult<String> = JobsResult.Failure("Not supported")
 
     suspend fun saveStops(id: String, stops: List<StopDraft>): JobsResult<String> = JobsResult.Failure("Not supported")
 

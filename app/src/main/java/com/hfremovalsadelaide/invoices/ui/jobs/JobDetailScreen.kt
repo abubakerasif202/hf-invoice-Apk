@@ -49,8 +49,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.hfremovalsadelaide.invoices.jobs.BookingCancel
 import com.hfremovalsadelaide.invoices.jobs.DraftReview
 import com.hfremovalsadelaide.invoices.jobs.Job
+import com.hfremovalsadelaide.invoices.jobs.LifecycleStatus
 import com.hfremovalsadelaide.invoices.jobs.JobFormat
 import com.hfremovalsadelaide.invoices.jobs.JobState
 import com.hfremovalsadelaide.invoices.jobs.JourneyStatus
@@ -91,11 +93,13 @@ fun JobDetailScreen(
     onRecordCrewEvent: (memberName: String, eventType: String, ack: Boolean, ackName: String, notes: String, at: Instant?) -> Unit = { _, _, _, _, _, _ -> },
     onStopEvent: (stopId: String, event: String) -> Unit = { _, _ -> },
     onSaveStops: (List<StopDraft>) -> Unit = {},
+    onCancelBooking: (reason: String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     BackHandler(onBack = onBack)
     val context = LocalContext.current
     var editingStops by remember { mutableStateOf(false) }
+    var cancellingBooking by remember { mutableStateOf(false) }
     var confirmFinish by remember { mutableStateOf(false) }
     var correcting by remember { mutableStateOf(false) }
     var recordingCrewEvent by remember { mutableStateOf(false) }
@@ -137,8 +141,19 @@ fun JobDetailScreen(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
+            if (job.lifecycle != null) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Booking status", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    StatusPill(job)
+                }
+            }
             if (job.notice) Banner("This calendar entry is a notice or note, not a job, so it cannot be started.", false)
-            if (job.cancelled) Banner("Cancelled in the calendar. Recorded times are kept.", true)
+            val cancelReason = job.lifecycle?.takeIf { it.status == LifecycleStatus.CANCELLED }?.cancellationReason
+            if (cancelReason != null) {
+                Banner("Booking cancelled: $cancelReason. Recorded times are kept.", true)
+            } else if (job.cancelled) {
+                Banner("Cancelled in the calendar. Recorded times are kept.", true)
+            }
             if (job.bookingStatus != com.hfremovalsadelaide.invoices.jobs.BookingStatus.CONFIRMED) {
                 Banner("Booking details are not marked confirmed. Check with the customer before relying on them.", false)
             }
@@ -177,6 +192,14 @@ fun JobDetailScreen(
                 if (canDispatch) {
                     OutlinedButton(onClick = onOpenAssign) { Text("Assign Crew") }
                     OutlinedButton(onClick = onOpenReschedule) { Text("Reschedule") }
+                }
+                if (BookingCancel.canOffer(job, hasPermission = "jobs.cancel" in permissions) && !job.notice) {
+                    OutlinedButton(
+                        onClick = { cancellingBooking = true },
+                        enabled = !busy,
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                        modifier = Modifier.testTag("job_cancel_booking_btn")
+                    ) { Text("Cancel booking") }
                 }
             }
 
@@ -321,7 +344,50 @@ fun JobDetailScreen(
             onSave = { editingStops = false; onSaveStops(it) }
         )
     }
+    if (cancellingBooking) {
+        CancelBookingDialog(
+            onDismiss = { cancellingBooking = false },
+            onConfirm = { reason -> cancellingBooking = false; onCancelBooking(reason) }
+        )
+    }
     draft?.let { InvoiceDraftDialog(it, busy, onConfirmDraft, onDismissDraft) }
+}
+
+/** A reason is required; the calendar event is not changed (calendar access is read-only). */
+@Composable
+private fun CancelBookingDialog(onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
+    var reason by remember { mutableStateOf("") }
+    val trimmed = reason.trim()
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Cancel this booking?") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "The booking stops counting for crew, truck and availability checks and cannot be started. " +
+                        "The Google Calendar event is not changed.",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                OutlinedTextField(
+                    value = reason,
+                    onValueChange = { if (it.length <= BookingCancel.MAX_REASON) reason = it },
+                    label = { Text("Reason (required)") },
+                    supportingText = { Text("${reason.length}/${BookingCancel.MAX_REASON}") },
+                    minLines = 2,
+                    modifier = Modifier.fillMaxWidth().testTag("job_cancel_reason")
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onConfirm(trimmed) },
+                enabled = trimmed.isNotEmpty(),
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error, contentColor = MaterialTheme.colorScheme.onError),
+                modifier = Modifier.testTag("job_cancel_confirm")
+            ) { Text("Cancel booking") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Keep booking") } }
+    )
 }
 
 @OptIn(ExperimentalLayoutApi::class)

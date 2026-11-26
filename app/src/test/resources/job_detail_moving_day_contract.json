@@ -1,5 +1,5 @@
 {
-  "id": "58650e74-ec46-47f2-a070-b07a54ffd7d4",
+  "id": "b78a299c-76a5-4c63-b351-88fbcc73c3a2",
   "googleEventId": "e15",
   "title": "Move",
   "scheduledStart": "2026-11-25T22:30:00.000Z",
@@ -25,9 +25,9 @@
   "dispatchNotes": "",
   "customerId": null,
   "invoiceId": null,
-  "updatedAt": "2026-11-26T18:01:27.005Z",
+  "updatedAt": "2026-11-26T19:26:13.613Z",
   "actual": {
-    "start": "2026-11-26T18:01:27.002Z",
+    "start": "2026-11-26T19:26:13.611Z",
     "finish": null,
     "elapsedMinutes": 0,
     "breakMinutes": 0,
@@ -45,10 +45,15 @@
     "Crew assignment",
     "Booking confirmation"
   ],
+  "lifecycle": {
+    "status": "in_progress",
+    "label": "In progress",
+    "cancellationReason": null
+  },
   "timeEntries": [
     {
       "type": "start",
-      "at": "2026-11-26T18:01:27.002Z",
+      "at": "2026-11-26T19:26:13.611Z",
       "deviceRecordedAt": null,
       "recordedBy": "admin",
       "notes": "",
@@ -56,24 +61,24 @@
     }
   ],
   "milestones": {
-    "travellingAt": "2026-11-26T18:01:26.962Z",
-    "arrivedAt": "2026-11-26T18:01:26.972Z",
+    "travellingAt": "2026-11-26T19:26:13.587Z",
+    "arrivedAt": "2026-11-26T19:26:13.595Z",
     "travelMinutes": 0
   },
   "stops": [
     {
-      "id": "47746f4d-5550-4c75-94f6-378f19917a08",
+      "id": "81a8f120-9b4e-4833-942b-6472e6d9c815",
       "seq": 1,
       "kind": "pickup",
       "address": "1 Test St",
       "contactName": "Jo",
       "contactPhone": "",
       "notes": "Lift booked",
-      "arrivedAt": "2026-11-26T18:01:27.018Z",
+      "arrivedAt": "2026-11-26T19:26:13.619Z",
       "completedAt": null
     },
     {
-      "id": "b4874d41-2eba-4349-892d-210ad3e9bfec",
+      "id": "9334790c-ce27-467d-b3d2-9c31ff35503f",
       "seq": 2,
       "kind": "delivery",
       "address": "9 Sample Rd",
@@ -95,28 +100,28 @@
   "timeline": [
     {
       "kind": "milestone",
-      "at": "2026-11-26T18:01:26.962Z",
+      "at": "2026-11-26T19:26:13.587Z",
       "label": "Travelling",
       "actor": "Administrator",
       "detail": ""
     },
     {
       "kind": "milestone",
-      "at": "2026-11-26T18:01:26.972Z",
+      "at": "2026-11-26T19:26:13.595Z",
       "label": "Arrived",
       "actor": "Administrator",
       "detail": "Travel 0 min"
     },
     {
       "kind": "time",
-      "at": "2026-11-26T18:01:27.002Z",
+      "at": "2026-11-26T19:26:13.611Z",
       "label": "Working",
       "actor": "Administrator",
       "detail": ""
     },
     {
       "kind": "stop",
-      "at": "2026-11-26T18:01:27.018Z",
+      "at": "2026-11-26T19:26:13.619Z",
       "label": "Arrived at stop 1 (pickup)",
       "actor": "Administrator",
       "detail": "1 Test St"
@@ -127,19 +132,19 @@
       "event": "job.travelling",
       "actor": "admin",
       "detail": {
-        "at": "2026-11-26T18:01:26.962Z",
+        "at": "2026-11-26T19:26:13.587Z",
         "deviceRecordedAt": null
       },
-      "at": "2026-11-26T18:01:26.967Z"
+      "at": "2026-11-26T19:26:13.589Z"
     },
     {
       "event": "job.arrived",
       "actor": "admin",
       "detail": {
-        "at": "2026-11-26T18:01:26.972Z",
+        "at": "2026-11-26T19:26:13.595Z",
         "deviceRecordedAt": null
       },
-      "at": "2026-11-26T18:01:26.975Z"
+      "at": "2026-11-26T19:26:13.596Z"
     },
     {
       "event": "job.stops_saved",
@@ -159,28 +164,28 @@
           }
         ]
       },
-      "at": "2026-11-26T18:01:26.990Z"
+      "at": "2026-11-26T19:26:13.603Z"
     },
     {
       "event": "job.start",
       "actor": "admin",
       "detail": {
-        "at": "2026-11-26T18:01:27.002Z",
+        "at": "2026-11-26T19:26:13.611Z",
         "deviceRecordedAt": null
       },
-      "at": "2026-11-26T18:01:27.009Z"
+      "at": "2026-11-26T19:26:13.615Z"
     },
     {
       "event": "job.stop_arrived",
       "actor": "admin",
       "detail": {
-        "at": "2026-11-26T18:01:27.018Z",
+        "at": "2026-11-26T19:26:13.619Z",
         "seq": 1,
         "kind": "pickup",
-        "stopId": "47746f4d-5550-4c75-94f6-378f19917a08",
+        "stopId": "81a8f120-9b4e-4833-942b-6472e6d9c815",
         "deviceRecordedAt": null
       },
-      "at": "2026-11-26T18:01:27.024Z"
+      "at": "2026-11-26T19:26:13.621Z"
     }
   ],
   "signoff": null

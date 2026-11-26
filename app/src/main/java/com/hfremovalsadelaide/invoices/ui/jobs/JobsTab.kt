@@ -82,6 +82,7 @@ fun JobsTab(
                     },
                     onStopEvent = { stopId, event -> viewModel.recordStopEvent(openJob.id, stopId, event) },
                     onSaveStops = { viewModel.saveStops(openJob.id, it) },
+                onCancelBooking = { viewModel.cancelBooking(openJob.id, it) },
                     modifier = Modifier.fillMaxSize()
                 )
 
