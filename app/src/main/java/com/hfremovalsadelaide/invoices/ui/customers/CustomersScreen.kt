@@ -88,17 +88,6 @@ private enum class CrmTab(val label: String) {
     FOLLOW_UPS("Follow-Ups & Portal")
 }
 
-private val QUOTE_STAGES = listOf(
-    "New Enquiry",
-    "Quote Prepared",
-    "Quote Sent",
-    "Accepted",
-    "Booking Confirmed",
-    "Job Completed",
-    "Invoiced",
-    "Paid"
-)
-
 /** Counts that have not loaded yet are left out instead of reading as a misleading zero. */
 internal fun customerActivityLine(jobs: Int?, invoices: Int?, kind: String): String = listOfNotNull(
     jobs?.let { "$it ${if (it == 1) "job" else "jobs"}" },
@@ -323,8 +312,8 @@ fun CustomersScreen(
                             .padding(horizontal = 16.dp)
                     ) {
                         FilterChip(selected = stageFilter == null, onClick = { stageFilter = null }, label = { Text("All") })
-                        QUOTE_STAGES.forEach { st ->
-                            FilterChip(selected = stageFilter == st, onClick = { stageFilter = st }, label = { Text(st) })
+                        QuoteStage.pipeline.forEach { st ->
+                            FilterChip(selected = stageFilter == st.key, onClick = { stageFilter = st.key }, label = { Text(st.label) })
                         }
                     }
                     val quotes = crm?.quotes.orEmpty().filter { stageFilter == null || it.stage == stageFilter }
@@ -450,7 +439,7 @@ fun CustomersScreen(
             onDismiss = { showQuoteDialog = false },
             onSave = { name, segment, pickup, delivery, truck, total, notes ->
                 showQuoteDialog = false
-                platformViewModel.saveQuote(null, name, "New Enquiry", segment, pickup, delivery, truck, total, notes)
+                platformViewModel.saveQuote(null, name, QuoteStage.INITIAL.key, segment, pickup, delivery, truck, total, notes)
             }
         )
     }
@@ -504,8 +493,7 @@ private fun QuotePipelineCard(
     onAdvance: (String) -> Unit,
     onGenerateTemplate: (String) -> Unit
 ) {
-    val idx = QUOTE_STAGES.indexOf(quote.stage)
-    val nextStage = if (idx in 0 until QUOTE_STAGES.lastIndex) QUOTE_STAGES[idx + 1] else null
+    val nextStage = QuoteStage.next(quote.stage)
 
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -515,7 +503,7 @@ private fun QuotePipelineCard(
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Text("${quote.reference} · ${quote.customerName}", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                StatusBadge(quote.stage, MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.onPrimaryContainer)
+                StatusBadge(QuoteStage.labelFor(quote.stage), MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.onPrimaryContainer)
             }
             if (quote.duplicateOfCustomerId != null) {
                 Text(
@@ -536,9 +524,9 @@ private fun QuotePipelineCard(
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (nextStage != null) {
                         Button(
-                            onClick = { onAdvance(nextStage) },
+                            onClick = { onAdvance(nextStage.key) },
                             colors = ButtonDefaults.buttonColors(containerColor = ForestGreen, contentColor = PureWhite)
-                        ) { Text("Move to $nextStage") }
+                        ) { Text("Move to ${nextStage.label}") }
                     }
                     OutlinedButton(onClick = { onGenerateTemplate("quote") }) {
                         Icon(Icons.Rounded.Share, contentDescription = null, modifier = Modifier.size(16.dp))
@@ -610,7 +598,7 @@ private fun CustomerProfileSheet(
             if (canWrite) {
                 Text("Templates (manual review & send)", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf("quote" to "Quote", "confirmation" to "Confirmation", "reminder" to "Reminder", "follow_up" to "Follow-up", "payment_request" to "Payment Request")
+                    QUOTE_TEMPLATE_KINDS
                         .forEach { (k, label) ->
                             FilterChip(selected = false, onClick = { onRenderTemplate(k) }, label = { Text(label) })
                         }
