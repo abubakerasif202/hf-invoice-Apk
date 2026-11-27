@@ -36,7 +36,13 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.hfremovalsadelaide.invoices.auth.SessionUser
 import com.hfremovalsadelaide.invoices.auth.UserRole
 import com.hfremovalsadelaide.invoices.data.AnalyticsSnapshot
+import com.hfremovalsadelaide.invoices.data.GstTreatment
 import com.hfremovalsadelaide.invoices.data.MonthlyTrendPoint
+import com.hfremovalsadelaide.invoices.data.PricingPolicyRecord
+import com.hfremovalsadelaide.invoices.data.PricingSegment
+import com.hfremovalsadelaide.invoices.data.RateCard
+import com.hfremovalsadelaide.invoices.data.ServiceCatalogueItem
+import com.hfremovalsadelaide.invoices.data.ServiceUnit
 import com.hfremovalsadelaide.invoices.data.TruckUtilItem
 import com.hfremovalsadelaide.invoices.jobs.ConditionReportItem
 import com.hfremovalsadelaide.invoices.jobs.FakeJobsGateway
@@ -53,6 +59,8 @@ import com.hfremovalsadelaide.invoices.ui.jobs.JobConditionSheet
 import com.hfremovalsadelaide.invoices.ui.jobs.JobInventorySheet
 import com.hfremovalsadelaide.invoices.ui.jobs.JobsTab
 import com.hfremovalsadelaide.invoices.ui.more.FleetScreen
+import com.hfremovalsadelaide.invoices.ui.pricing.PricingAdminContent
+import com.hfremovalsadelaide.invoices.ui.pricing.PricingTab
 import com.hfremovalsadelaide.invoices.ui.theme.HFRemovalsTheme
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -412,5 +420,57 @@ class PlatformUiInstrumentedTest {
         rule.onNodeWithTag("settings_sheet").assertIsDisplayed()
         rule.onNodeWithTag("theme_mode_dark").performClick()
         assertTrue(selectedTheme == ThemeMode.DARK)
+    }
+
+    @Test
+    fun pricingAdminHidesApproveForNonOwnerAndShowsCatalogueStatusInDarkMode() {
+        var tab = PricingTab.POLICIES
+        val tabState = androidx.compose.runtime.mutableStateOf(tab)
+        val state = PlatformUiState(
+            checkingSession = false,
+            pricingLoaded = true,
+            pricingPolicies = listOf(
+                PricingPolicyRecord("draft-1", "residential", "minimum_hours", "3", "2026-12-01", "draft", "Draft change")
+            ),
+            rateCards = listOf(
+                RateCard("rc-1", "Medium 12t + 2 movers", "residential", "12t", 2, "148.00", "2", "0", "2026-01-01", true, overtimeRate = null)
+            ),
+            serviceCatalogue = listOf(
+                ServiceCatalogueItem("svc-1", "Monitor packing", "Padded bag", null, ServiceUnit.PER_ITEM, null, null, "2026-01-01", null, true),
+                ServiceCatalogueItem("svc-2", "Packing boxes", "Standard carton", null, ServiceUnit.PER_ITEM, "0.00", GstTreatment.NONE, "2026-01-01", null, true)
+            )
+        )
+        rule.setContent {
+            CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, fontScale = 1.5f)) {
+                HFRemovalsTheme(themeMode = ThemeMode.DARK) {
+                    Box(Modifier.width(320.dp)) {
+                        PricingAdminContent(
+                            state = state,
+                            isOwner = false,
+                            today = "2026-11-27",
+                            selectedTab = tabState.value,
+                            onSelectTab = { tabState.value = it },
+                            selectedSegment = PricingSegment.RESIDENTIAL,
+                            onSelectSegment = {},
+                            onRefresh = {},
+                            onSavePolicyDraft = { _, _, _, _, _ -> },
+                            onApprovePolicy = {},
+                            onSaveRateCard = { _, _, _, _, _, _, _, _, _, _, _, _ -> },
+                            onSaveService = { _, _, _, _, _, _, _, _, _ -> }
+                        )
+                    }
+                }
+            }
+        }
+
+        rule.onNodeWithTag("pricing_admin_screen").assertIsDisplayed()
+        rule.onNodeWithTag("approve_policy_minimum_hours").assertDoesNotExist()
+        rule.onNodeWithText("Owner approval required to activate.").assertIsDisplayed()
+
+        rule.onNodeWithTag("pricing_tab_catalogue").performClick()
+        rule.onNodeWithTag("filter_zero").performClick()
+        rule.onNodeWithTag("pricing_admin_screen").performScrollToNode(hasTestTag("service_card_Packing boxes"))
+        rule.onNodeWithTag("service_card_Packing boxes").assertIsDisplayed()
+        rule.onNodeWithText("Approved $0.00 · No GST").assertIsDisplayed()
     }
 }

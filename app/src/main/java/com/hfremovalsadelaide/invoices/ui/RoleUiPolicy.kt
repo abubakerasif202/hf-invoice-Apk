@@ -19,4 +19,8 @@ object RoleUiPolicy {
 
     fun canDispatch(user: SessionUser?): Boolean = user?.can("jobs.assign") == true
     fun canWriteInvoices(user: SessionUser?): Boolean = user?.can("invoices.manage") == true
+    fun canViewPricingAdmin(user: SessionUser?): Boolean =
+        user != null && user.can("settings.manage") && user.can("invoices.read")
+    fun canApprovePricing(user: SessionUser?): Boolean =
+        canViewPricingAdmin(user) && user?.role == com.hfremovalsadelaide.invoices.auth.UserRole.OWNER
 }
