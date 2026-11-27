@@ -35,6 +35,7 @@ import androidx.compose.material.icons.rounded.PictureAsPdf
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Sync
+import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -64,9 +65,11 @@ import com.hfremovalsadelaide.invoices.offline.QueueOpStatus
 import com.hfremovalsadelaide.invoices.ui.MoreSection
 import com.hfremovalsadelaide.invoices.ui.PlatformUiState
 import com.hfremovalsadelaide.invoices.ui.PlatformViewModel
+import com.hfremovalsadelaide.invoices.ui.RoleUiPolicy
 import com.hfremovalsadelaide.invoices.ui.components.EmptyStateCard
 import com.hfremovalsadelaide.invoices.ui.components.HfSectionCard
 import com.hfremovalsadelaide.invoices.ui.components.StatusBadge
+import com.hfremovalsadelaide.invoices.ui.pricing.PricingAdminScreen
 import com.hfremovalsadelaide.invoices.ui.theme.ForestGreen
 import com.hfremovalsadelaide.invoices.ui.theme.GoldAccent
 import com.hfremovalsadelaide.invoices.ui.theme.PureWhite
@@ -105,6 +108,7 @@ fun MoreRouterScreen(
             MoreSection.HUB -> "Operations Hub"
             MoreSection.STAFF -> "Staff & Permissions"
             MoreSection.FLEET -> "Vehicles & Fleet"
+            MoreSection.PRICING -> "Pricing & Service Catalogue"
             MoreSection.TIMESHEETS -> "Timesheets & Pay"
             MoreSection.ANALYTICS -> "Reports & Analytics"
             MoreSection.NOTIFICATIONS -> "Notifications"
@@ -147,6 +151,7 @@ fun MoreRouterScreen(
             MoreSection.FLEET -> FleetScreen(platformState) { name, rego, vehicleClass, tonnes ->
                 platformViewModel.saveVehicle(null, name, rego, vehicleClass, tonnes, "available", null, null, "")
             }
+            MoreSection.PRICING -> PricingAdminScreen(platformState, platformViewModel)
             MoreSection.TIMESHEETS -> TimesheetsScreen(platformState, platformViewModel, onDownloadStatementPdf)
             MoreSection.ANALYTICS -> AnalyticsScreen(platformState, onDownloadCsvExport)
             MoreSection.NOTIFICATIONS -> NotificationsScreen(platformState, platformViewModel, onOpenJob)
@@ -204,6 +209,22 @@ private fun MoreHubGrid(
                     ),
                     onClick = { onSelectSection(MoreSection.FLEET) },
                     testTag = "more_fleet"
+                )
+            }
+        }
+        if (RoleUiPolicy.canViewPricingAdmin(user)) {
+            item {
+                MoreRowItem(
+                    icon = Icons.Rounded.Tune,
+                    title = "Pricing & Service Catalogue",
+                    subtitle = moduleCountSubtitle(
+                        count = state.serviceCatalogue.count { it.effectiveTo == null }.takeIf { state.pricingLoaded },
+                        noun = "services",
+                        detail = "Policies, truck rates & owner approvals",
+                        loading = state.loadingModule
+                    ),
+                    onClick = { onSelectSection(MoreSection.PRICING) },
+                    testTag = "more_pricing"
                 )
             }
         }

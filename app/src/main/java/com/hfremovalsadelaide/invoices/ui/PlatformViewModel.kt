@@ -9,7 +9,12 @@ import com.hfremovalsadelaide.invoices.data.CrmSnapshot
 import com.hfremovalsadelaide.invoices.data.FleetSnapshot
 import com.hfremovalsadelaide.invoices.data.NotificationFeedItem
 import com.hfremovalsadelaide.invoices.data.PlatformRepository
+import com.hfremovalsadelaide.invoices.data.PricingPolicyRecord
+import com.hfremovalsadelaide.invoices.data.PricingRepository
 import com.hfremovalsadelaide.invoices.data.RateCard
+import com.hfremovalsadelaide.invoices.data.ServiceCatalogueItem
+import com.hfremovalsadelaide.invoices.data.ServiceUnit
+import com.hfremovalsadelaide.invoices.data.GstTreatment
 import com.hfremovalsadelaide.invoices.data.StaffMember
 import com.hfremovalsadelaide.invoices.data.TimesheetsSnapshot
 import com.hfremovalsadelaide.invoices.network.ApiResult
@@ -32,6 +37,7 @@ enum class MoreSection {
     HUB,
     STAFF,
     FLEET,
+    PRICING,
     TIMESHEETS,
     ANALYTICS,
     NOTIFICATIONS,
@@ -53,6 +59,9 @@ data class PlatformUiState(
     val staffLoaded: Boolean = false,
     val fleet: FleetSnapshot? = null,
     val rateCards: List<RateCard> = emptyList(),
+    val pricingPolicies: List<PricingPolicyRecord> = emptyList(),
+    val serviceCatalogue: List<ServiceCatalogueItem> = emptyList(),
+    val pricingLoaded: Boolean = false,
     val crm: CrmSnapshot? = null,
     val timesheets: TimesheetsSnapshot? = null,
     val analytics: AnalyticsSnapshot? = null,
@@ -300,6 +309,7 @@ class PlatformViewModel(
         if (user.can("fleet.read")) loadFleet()
         if (user.can("staff.manage") || user.can("jobs.assign")) loadStaff()
         if (user.can("invoices.read") || user.can("crm.read")) loadRateCards()
+        if (user.can("settings.manage") && user.can("invoices.read")) loadPricingAdmin()
         if (user.can("reports.read")) loadAnalytics()
         if (user.can("crm.read")) loadCrm()
         loadTimesheets()
@@ -391,6 +401,95 @@ class PlatformViewModel(
     fun loadRateCards() = accountScope.launch {
         val res = PlatformRepository.fetchRateCards()
         if (res is ApiResult.Success) _state.update { it.copy(rateCards = res.data) }
+    }
+
+    fun loadPricingAdmin() = accountScope.launch {
+        val pRes = PricingRepository.fetchPolicies()
+        val sRes = PricingRepository.fetchServices()
+        val rRes = PlatformRepository.fetchRateCards()
+        _state.update { state ->
+            state.copy(
+                pricingPolicies = (pRes as? ApiResult.Success)?.data ?: state.pricingPolicies,
+                serviceCatalogue = (sRes as? ApiResult.Success)?.data ?: state.serviceCatalogue,
+                rateCards = (rRes as? ApiResult.Success)?.data ?: state.rateCards,
+                pricingLoaded = pRes is ApiResult.Success && sRes is ApiResult.Success
+            )
+        }
+    }
+
+    fun savePolicyDraft(segment: String, key: String, value: String, effectiveFrom: String, notes: String) =
+        accountScope.launch {
+            _state.update { it.copy(loadingModule = true) }
+            when (val res = PricingRepository.savePolicyDraft(segment, key, value, effectiveFrom, notes)) {
+                is ApiResult.Success -> {
+                    _state.update { it.copy(loadingModule = false, feedbackMessage = "Policy draft saved") }
+                    loadPricingAdmin()
+                }
+                else -> handleMutationFailure(res)
+            }
+        }
+
+    fun approvePolicy(policyId: String) = accountScope.launch {
+        _state.update { it.copy(loadingModule = true) }
+        when (val res = PricingRepository.approvePolicy(policyId)) {
+            is ApiResult.Success -> {
+                _state.update { it.copy(loadingModule = false, feedbackMessage = "Policy approved and activated") }
+                loadPricingAdmin()
+            }
+            else -> handleMutationFailure(res)
+        }
+    }
+
+    fun saveRateCard(
+        id: String?,
+        name: String,
+        segment: String,
+        truckClass: String,
+        movers: Int,
+        hourlyRate: String,
+        callOutHours: String,
+        callOutFee: String,
+        overtimeRate: String?,
+        effectiveFrom: String,
+        active: Boolean,
+        notes: String
+    ) = accountScope.launch {
+        _state.update { it.copy(loadingModule = true) }
+        when (val res = PricingRepository.saveRateCard(
+            id, name, segment, truckClass, movers, hourlyRate,
+            callOutHours, callOutFee, overtimeRate, effectiveFrom, active, notes
+        )) {
+            is ApiResult.Success -> {
+                val msg = if (res.data.second) "New rate card version created" else "Rate card saved"
+                _state.update { it.copy(loadingModule = false, feedbackMessage = msg) }
+                loadPricingAdmin()
+            }
+            else -> handleMutationFailure(res)
+        }
+    }
+
+    fun saveServiceItem(
+        id: String?,
+        name: String,
+        description: String,
+        segment: String?,
+        unit: ServiceUnit,
+        rate: String?,
+        gstTreatment: GstTreatment?,
+        effectiveFrom: String,
+        active: Boolean
+    ) = accountScope.launch {
+        _state.update { it.copy(loadingModule = true) }
+        when (val res = PricingRepository.saveService(
+            id, name, description, segment, unit, rate, gstTreatment, effectiveFrom, active
+        )) {
+            is ApiResult.Success -> {
+                val msg = if (res.data.second) "New service version created" else "Service saved"
+                _state.update { it.copy(loadingModule = false, feedbackMessage = msg) }
+                loadPricingAdmin()
+            }
+            else -> handleMutationFailure(res)
+        }
     }
 
     fun loadCrm() = accountScope.launch {

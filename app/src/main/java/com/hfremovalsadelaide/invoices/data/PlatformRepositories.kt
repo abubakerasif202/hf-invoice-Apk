@@ -78,7 +78,11 @@ data class RateCard(
     val callOutHours: String,
     val callOutFee: String,
     val effectiveFrom: String,
-    val active: Boolean
+    val active: Boolean,
+    val overtimeRate: String? = null,
+    val effectiveTo: String? = null,
+    val notes: String = "",
+    val supersedesId: String? = null
 )
 
 data class QuoteRecord(
@@ -445,7 +449,11 @@ object PlatformRepository {
                 callOutHours = o.optString("call_out_hours", "0"),
                 callOutFee = o.optString("call_out_fee", "0"),
                 effectiveFrom = o.optString("effective_from", ""),
-                active = o.optBoolean("active", true)
+                active = o.optBoolean("active", true),
+                overtimeRate = o.str("overtime_rate"),
+                effectiveTo = o.str("effective_to"),
+                notes = o.optString("notes", ""),
+                supersedesId = o.str("supersedes_id")
             )
         }
     }

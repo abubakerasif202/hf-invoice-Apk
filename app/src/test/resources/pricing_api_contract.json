@@ -1,0 +1,36 @@
+{
+  "segments": [
+    "residential",
+    "commercial",
+    "interstate"
+  ],
+  "policyKeys": [
+    "rates_include_gst",
+    "minimum_hours",
+    "billing_increment_minutes",
+    "call_out_fee",
+    "travel_fee",
+    "weekend_multiplier",
+    "public_holiday_multiplier",
+    "overtime_multiplier",
+    "standard_day_hours",
+    "deposit_method",
+    "deposit_percent",
+    "deposit_fixed",
+    "quote_validity_days",
+    "cancellation_fee",
+    "packing_rate",
+    "heavy_item_surcharge"
+  ],
+  "serviceUnits": [
+    "per_item",
+    "hourly",
+    "per_day",
+    "fixed"
+  ],
+  "gstTreatments": [
+    "inclusive",
+    "exclusive",
+    "none"
+  ]
+}
