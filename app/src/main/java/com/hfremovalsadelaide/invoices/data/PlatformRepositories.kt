@@ -20,6 +20,21 @@ data class StaffMember(
     val hasPasskey: Boolean = false
 )
 
+data class SubcontractorProfileRecord(
+    val staffId: String,
+    val companyName: String = "",
+    val contactName: String = "",
+    val contactPhone: String = "",
+    val licenceNumber: String = "",
+    val insuranceProvider: String = "",
+    val insurancePolicy: String = "",
+    val insuranceExpiry: String? = null,
+    val paymentTermsDays: Int? = null,
+    val notes: String = "",
+    val insuranceExpired: Boolean = false,
+    val insuranceExpiringSoon: Boolean = false
+)
+
 data class VehicleRecord(
     val id: String,
     val name: String,
@@ -102,7 +117,15 @@ data class QuoteRecord(
     val estimatedTotal: String?,
     val notes: String,
     val followUpDate: String?,
-    val duplicateOfCustomerId: String?
+    val duplicateOfCustomerId: String?,
+    val revisionCount: Int = 0,
+    val currentRevisionId: String? = null,
+    val acceptedRevisionId: String? = null,
+    val acceptedAt: String? = null,
+    val acceptanceMethod: String? = null,
+    val jobId: String? = null,
+    val termsVersionId: String? = null,
+    val legacyStatus: String? = null
 )
 
 data class FollowUpRecord(
@@ -130,7 +153,8 @@ data class CrmSnapshot(
     val customers: List<CustomerSummary>,
     val quotes: List<QuoteRecord>,
     val followUps: List<FollowUpRecord>,
-    val portalSubmissions: List<PortalSubmissionRecord>
+    val portalSubmissions: List<PortalSubmissionRecord>,
+    val approvedTerms: List<TermsVersionRecord> = emptyList()
 )
 
 data class TimesheetRecord(
@@ -494,7 +518,30 @@ object PlatformRepository {
                 estimatedTotal = o.str("estimated_total"),
                 notes = o.optString("notes", ""),
                 followUpDate = o.str("follow_up_date"),
-                duplicateOfCustomerId = o.str("duplicate_of_customer_id")
+                duplicateOfCustomerId = o.str("duplicate_of_customer_id"),
+                revisionCount = o.optInt("revision_count", 0),
+                currentRevisionId = o.str("current_revision_id"),
+                acceptedRevisionId = o.str("accepted_revision_id"),
+                acceptedAt = o.str("accepted_at"),
+                acceptanceMethod = o.str("acceptance_method"),
+                jobId = o.str("job_id"),
+                termsVersionId = o.str("terms_version_id"),
+                legacyStatus = o.str("legacy_status")
+            )
+        }
+        val tArr = root.optJSONArray("approvedTerms") ?: JSONArray()
+        val approvedTerms = List(tArr.length()) { i ->
+            val o = tArr.getJSONObject(i)
+            TermsVersionRecord(
+                id = o.getString("id"),
+                segment = o.str("segment"),
+                title = o.getString("title"),
+                body = o.optString("body", ""),
+                versionNumber = o.optInt("version_number", 1),
+                effectiveFrom = o.optString("effective_from", ""),
+                effectiveTo = o.str("effective_to"),
+                status = o.optString("status", "approved"),
+                supersedesId = o.str("supersedes_id")
             )
         }
         val fArr = root.optJSONArray("followUps") ?: JSONArray()
@@ -524,7 +571,7 @@ object PlatformRepository {
                 createdAt = o.getString("created_at")
             )
         }
-        CrmSnapshot(customers, quotes, followUps, submissions)
+        CrmSnapshot(customers, quotes, followUps, submissions, approvedTerms)
     }
 
     suspend fun saveCustomer(id: String?, name: String, kind: String, email: String, phone: String, address: String, notes: String): ApiResult<Pair<String, Int>> =
@@ -597,7 +644,21 @@ object PlatformRepository {
                 .put("reviewNotes", notes)
         ) { true }
 
-    suspend fun renderTemplate(kind: String, customerName: String, reference: String?, amount: String?): ApiResult<Pair<String, String>> =
+    suspend fun renderTemplate(
+        kind: String,
+        customerName: String,
+        reference: String?,
+        amount: String?,
+        date: String? = null,
+        pickup: String? = null,
+        delivery: String? = null,
+        revisionNumber: Int? = null,
+        validUntil: String? = null,
+        depositAmount: String? = null,
+        balance: String? = null,
+        truck: String? = null,
+        movers: Int? = null
+    ): ApiResult<Pair<String, String>> =
         ApiClient.post(
             "/api/crm",
             JSONObject()
@@ -606,6 +667,17 @@ object PlatformRepository {
                 .put("customerName", customerName)
                 .put("reference", reference ?: "")
                 .put("amount", amount ?: "")
+                .apply {
+                    date?.takeIf { it.isNotBlank() }?.let { put("date", it) }
+                    pickup?.takeIf { it.isNotBlank() }?.let { put("pickup", it) }
+                    delivery?.takeIf { it.isNotBlank() }?.let { put("delivery", it) }
+                    revisionNumber?.let { put("revisionNumber", it) }
+                    validUntil?.takeIf { it.isNotBlank() }?.let { put("validUntil", it) }
+                    depositAmount?.takeIf { it.isNotBlank() }?.let { put("depositAmount", it) }
+                    balance?.takeIf { it.isNotBlank() }?.let { put("balance", it) }
+                    truck?.takeIf { it.isNotBlank() }?.let { put("truck", it) }
+                    movers?.let { put("movers", it) }
+                }
         ) { text ->
             val o = JSONObject(text)
             o.getString("subject") to o.getString("body")
@@ -758,4 +830,51 @@ object PlatformRepository {
 
     suspend fun markNotificationRead(eventId: String): ApiResult<Boolean> =
         ApiClient.post("/api/jobs/notifications", JSONObject().put("action", "mark_read").put("eventId", eventId)) { true }
+
+    suspend fun fetchSubcontractors(): ApiResult<List<SubcontractorProfileRecord>> = ApiClient.get("/api/subcontractors") { text ->
+        val arr = JSONObject(text).optJSONArray("subcontractors") ?: JSONArray()
+        List(arr.length()) { i ->
+            val o = arr.getJSONObject(i)
+            SubcontractorProfileRecord(
+                staffId = o.getString("staffId"),
+                companyName = o.optString("companyName", ""),
+                contactName = o.optString("contactName", ""),
+                contactPhone = o.optString("contactPhone", ""),
+                licenceNumber = o.optString("licenceNumber", ""),
+                insuranceProvider = o.optString("insuranceProvider", ""),
+                insurancePolicy = o.optString("insurancePolicy", ""),
+                insuranceExpiry = o.str("insuranceExpiry"),
+                paymentTermsDays = if (o.isNull("paymentTermsDays")) null else o.optInt("paymentTermsDays"),
+                notes = o.optString("notes", ""),
+                insuranceExpired = o.optBoolean("insuranceExpired", false),
+                insuranceExpiringSoon = o.optBoolean("insuranceExpiringSoon", false)
+            )
+        }
+    }
+
+    suspend fun saveSubcontractorProfile(
+        staffId: String,
+        companyName: String,
+        contactName: String,
+        contactPhone: String,
+        licenceNumber: String,
+        insuranceProvider: String,
+        insurancePolicy: String,
+        insuranceExpiry: String?,
+        paymentTermsDays: Int?,
+        notes: String
+    ): ApiResult<Boolean> = ApiClient.post(
+        "/api/subcontractors",
+        JSONObject()
+            .put("staffId", staffId)
+            .put("companyName", companyName.trim())
+            .put("contactName", contactName.trim())
+            .put("contactPhone", contactPhone.trim())
+            .put("licenceNumber", licenceNumber.trim())
+            .put("insuranceProvider", insuranceProvider.trim())
+            .put("insurancePolicy", insurancePolicy.trim())
+            .put("insuranceExpiry", insuranceExpiry?.trim()?.takeIf { it.isNotEmpty() } ?: JSONObject.NULL)
+            .put("paymentTermsDays", paymentTermsDays ?: JSONObject.NULL)
+            .put("notes", notes.trim())
+    ) { true }
 }

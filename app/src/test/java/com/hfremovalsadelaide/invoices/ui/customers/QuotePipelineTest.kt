@@ -65,7 +65,17 @@ class QuotePipelineTest {
     @Test
     fun `template kinds match the backend's accepted kinds`() {
         assertEquals(
-            listOf("quote", "booking_confirmation", "reminder", "post_move_followup", "payment_request"),
+            listOf(
+                "quote",
+                "quote_revision",
+                "quote_followup",
+                "booking_confirmation",
+                "deposit_receipt",
+                "move_day_dispatch",
+                "reminder",
+                "post_move_followup",
+                "payment_request"
+            ),
             QUOTE_TEMPLATE_KINDS.map { it.first }
         )
     }

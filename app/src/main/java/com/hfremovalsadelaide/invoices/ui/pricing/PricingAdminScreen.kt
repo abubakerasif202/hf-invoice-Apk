@@ -71,6 +71,7 @@ import com.hfremovalsadelaide.invoices.data.RateCard
 import com.hfremovalsadelaide.invoices.data.ServiceCatalogueItem
 import com.hfremovalsadelaide.invoices.data.ServicePricingStatus
 import com.hfremovalsadelaide.invoices.data.ServiceUnit
+import com.hfremovalsadelaide.invoices.data.TermsVersionRecord
 import com.hfremovalsadelaide.invoices.ui.PlatformUiState
 import com.hfremovalsadelaide.invoices.ui.PlatformViewModel
 import com.hfremovalsadelaide.invoices.ui.RoleUiPolicy
@@ -86,7 +87,8 @@ import java.time.LocalDate
 enum class PricingTab(val label: String) {
     POLICIES("Policies"),
     RATE_CARDS("Rate Cards"),
-    CATALOGUE("Services")
+    CATALOGUE("Services"),
+    TERMS("Terms")
 }
 
 @Composable
@@ -126,6 +128,10 @@ fun PricingAdminScreen(
         onSaveService = { id, name, desc, segment, unit, rate, gst, effectiveFrom, active ->
             platformViewModel.saveServiceItem(id, name, desc, segment, unit, rate, gst, effectiveFrom, active)
         },
+        onSaveTermsDraft = { segment, title, body, effectiveFrom, supersedesId ->
+            platformViewModel.saveTermsDraft(segment, title, body, effectiveFrom, supersedesId)
+        },
+        onApproveTerms = { termsId -> platformViewModel.approveTermsVersion(termsId) },
         modifier = modifier
     )
 }
@@ -145,11 +151,14 @@ internal fun PricingAdminContent(
     onApprovePolicy: (String) -> Unit,
     onSaveRateCard: (String?, String, String, String, Int, String, String, String, String?, String, Boolean, String) -> Unit,
     onSaveService: (String?, String, String, String?, ServiceUnit, String?, GstTreatment?, String, Boolean) -> Unit,
+    onSaveTermsDraft: (String?, String, String, String, String?) -> Unit = { _, _, _, _, _ -> },
+    onApproveTerms: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var editingPolicy by remember { mutableStateOf<Pair<PricingPolicyKey, PricingPolicyRecord?>?>(null) }
     var editingRateCard by remember { mutableStateOf<Pair<Boolean, RateCard?>?>(null) } // Pair(isNew, existingOrNull)
     var editingService by remember { mutableStateOf<Pair<Boolean, ServiceCatalogueItem?>?>(null) }
+    var showTermsDialog by remember { mutableStateOf(false) }
 
     var showPolicyHistory by remember { mutableStateOf(false) }
     var showRateCardHistory by remember { mutableStateOf(false) }
@@ -249,6 +258,7 @@ internal fun PricingAdminContent(
                                 PricingTab.POLICIES -> state.pricingPolicies.count { it.status == "draft" }
                                 PricingTab.RATE_CARDS -> state.rateCards.count { it.effectiveTo == null && it.active }
                                 PricingTab.CATALOGUE -> state.serviceCatalogue.count { it.effectiveTo == null }
+                                PricingTab.TERMS -> state.termsVersions.count { it.status == "approved" && it.effectiveTo == null }
                             }
                             FilterChip(
                                 selected = selectedTab == tab,
@@ -692,6 +702,49 @@ internal fun PricingAdminContent(
                     }
                 }
             }
+
+            PricingTab.TERMS -> {
+                val segTerms = state.termsVersions.filter { it.segment == null || it.segment == selectedSegment.key }
+                item {
+                    HfSectionCard(
+                        title = "Versioned Terms & Conditions",
+                        trailing = {
+                            Button(
+                                onClick = { showTermsDialog = true },
+                                colors = ButtonDefaults.buttonColors(containerColor = ForestGreen, contentColor = PureWhite),
+                                modifier = Modifier.testTag("add_terms_btn")
+                            ) {
+                                Icon(Icons.Rounded.Add, null, Modifier.size(16.dp))
+                                Spacer(Modifier.size(4.dp))
+                                Text("New Draft")
+                            }
+                        }
+                    ) {
+                        Text(
+                            text = "Issued quotations require an active owner-approved Terms & Conditions version.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                if (segTerms.isEmpty()) {
+                    item {
+                        EmptyStateCard(
+                            icon = Icons.Rounded.Policy,
+                            title = "No Terms & Conditions yet",
+                            message = "Draft Terms & Conditions and have an owner approve them before issuing quotations."
+                        )
+                    }
+                } else {
+                    items(segTerms, key = { it.id }) { terms ->
+                        TermsVersionCard(
+                            terms = terms,
+                            isOwner = isOwner,
+                            onApprove = { onApproveTerms(terms.id) }
+                        )
+                    }
+                }
+            }
         }
     }
 
@@ -758,6 +811,145 @@ internal fun PricingAdminContent(
             }
         )
     }
+
+    if (showTermsDialog) {
+        TermsDraftDialog(
+            defaultSegment = selectedSegment.key,
+            approvedTerms = state.termsVersions.filter { it.status == "approved" && it.effectiveTo == null },
+            defaultEffectiveFrom = today,
+            onDismiss = { showTermsDialog = false },
+            onSave = { segment, title, body, effectiveFrom, supersedesId ->
+                showTermsDialog = false
+                onSaveTermsDraft(segment, title, body, effectiveFrom, supersedesId)
+            }
+        )
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun TermsVersionCard(
+    terms: TermsVersionRecord,
+    isOwner: Boolean,
+    onApprove: () -> Unit
+) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("terms_card_${terms.id}")
+    ) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("v${terms.versionNumber} · ${terms.title}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                StatusBadge(
+                    label = when {
+                        terms.status != "approved" -> "Draft"
+                        terms.effectiveTo != null -> "Superseded"
+                        else -> "Approved"
+                    },
+                    containerColor = if (terms.status == "approved" && terms.effectiveTo == null) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.secondaryContainer,
+                    contentColor = if (terms.status == "approved" && terms.effectiveTo == null) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSecondaryContainer
+                )
+            }
+            Text(
+                text = "${PricingSegment.fromKey(terms.segment)?.label ?: "Universal (all segments)"} · Effective ${terms.effectiveFrom}${terms.effectiveTo?.let { " → $it" } ?: ""}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(terms.body, style = MaterialTheme.typography.bodySmall)
+            if (terms.status == "draft") {
+                if (isOwner) {
+                    Button(
+                        onClick = onApprove,
+                        colors = ButtonDefaults.buttonColors(containerColor = ForestGreen, contentColor = PureWhite),
+                        modifier = Modifier.testTag("approve_terms_${terms.versionNumber}")
+                    ) {
+                        Icon(Icons.Rounded.CheckCircle, null, Modifier.size(16.dp))
+                        Spacer(Modifier.size(6.dp))
+                        Text("Approve Terms")
+                    }
+                } else {
+                    Text(
+                        "Owner approval required to activate terms.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun TermsDraftDialog(
+    defaultSegment: String,
+    approvedTerms: List<TermsVersionRecord>,
+    defaultEffectiveFrom: String,
+    onDismiss: () -> Unit,
+    onSave: (String?, String, String, String, String?) -> Unit
+) {
+    var segment by remember { mutableStateOf<String?>(defaultSegment) }
+    var title by remember { mutableStateOf("") }
+    var body by remember { mutableStateOf("") }
+    var effectiveFrom by remember { mutableStateOf(defaultEffectiveFrom) }
+    var supersedesId by remember { mutableStateOf<String?>(null) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Draft Terms & Conditions", fontWeight = FontWeight.Bold) },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.verticalScroll(rememberScrollState())
+            ) {
+                Text("Scope", style = MaterialTheme.typography.labelLarge)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    FilterChip(selected = segment == null, onClick = { segment = null; supersedesId = null }, label = { Text("Universal") })
+                    PricingSegment.entries.forEach { s ->
+                        FilterChip(selected = segment == s.key, onClick = { segment = s.key; supersedesId = null }, label = { Text(s.label) })
+                    }
+                }
+                OutlinedTextField(value = title, onValueChange = { title = it; errorMessage = null }, label = { Text("Title *") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = effectiveFrom, onValueChange = { effectiveFrom = it }, label = { Text("Effective from (YYYY-MM-DD)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                val supersedingChoices = approvedTerms.filter { it.segment == segment }
+                if (supersedingChoices.isNotEmpty()) {
+                    Text("Supersede active version (optional)", style = MaterialTheme.typography.labelLarge)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        FilterChip(selected = supersedesId == null, onClick = { supersedesId = null }, label = { Text("None") })
+                        supersedingChoices.forEach { t ->
+                            FilterChip(selected = supersedesId == t.id, onClick = { supersedesId = t.id }, label = { Text("v${t.versionNumber} · ${t.title}") })
+                        }
+                    }
+                }
+                OutlinedTextField(
+                    value = body,
+                    onValueChange = { body = it; errorMessage = null },
+                    label = { Text("Terms & Conditions body *") },
+                    minLines = 4,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                errorMessage?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    when {
+                        title.trim().length < 2 -> errorMessage = "Enter a title."
+                        body.trim().length < 5 -> errorMessage = "Enter terms content."
+                        !Regex("^\\d{4}-\\d{2}-\\d{2}$").matches(effectiveFrom.trim()) -> errorMessage = "Use YYYY-MM-DD date."
+                        else -> onSave(segment, title.trim(), body.trim(), effectiveFrom.trim(), supersedesId)
+                    }
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = ForestGreen, contentColor = PureWhite)
+            ) { Text("Save Draft") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
 }
 
 @Composable

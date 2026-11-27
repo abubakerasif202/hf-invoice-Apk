@@ -160,8 +160,8 @@ fun CreateInvoiceScreen(
 
                 // Section 1: Customer Details
                 FormSectionCard(title = stringResource(id = R.string.create_invoice_section_customer)) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 10.dp)) {
-                        listOf("residential" to "Residential", "commercial" to "Commercial").forEach { (key, label) ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 10.dp).horizontalScroll(rememberScrollState())) {
+                        listOf("residential" to "Residential", "commercial" to "Commercial", "interstate" to "Interstate").forEach { (key, label) ->
                             FilterChip(
                                 selected = formState.segment == key,
                                 onClick = { onSegmentChanged(key) },

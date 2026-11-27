@@ -76,6 +76,7 @@ import com.hfremovalsadelaide.invoices.jobs.JobsViewModel
 import com.hfremovalsadelaide.invoices.network.NetworkMonitor
 import com.hfremovalsadelaide.invoices.offline.EncryptedStore
 import com.hfremovalsadelaide.invoices.offline.OfflineSyncQueue
+import com.hfremovalsadelaide.invoices.data.QuoteDraftStore
 import com.hfremovalsadelaide.invoices.security.TrustedOriginPolicy
 import com.hfremovalsadelaide.invoices.settings.AppSettings
 import com.hfremovalsadelaide.invoices.ui.auth.BrandedSignInScreen
@@ -195,7 +196,8 @@ fun MainAppShell(
                 PlatformViewModel(
                     authRepository = authRepository,
                     syncQueue = syncQueue,
-                    scheduleBackgroundSync = { OfflineSyncQueue.scheduleSync(appContext) }
+                    scheduleBackgroundSync = { OfflineSyncQueue.scheduleSync(appContext) },
+                    quoteDraftStore = QuoteDraftStore(encryptedStore)
                 )
             }
         }
@@ -586,7 +588,20 @@ fun MainAppShell(
                                 launchIntent = crmLaunchIntent,
                                 onLaunchIntentConsumed = { crmLaunchIntent = null },
                                 jobsLoaded = jobsState.snapshot != null,
-                                invoicesLoaded = invoicesState.loadState is InvoicesLoadState.Loaded
+                                invoicesLoaded = invoicesState.loadState is InvoicesLoadState.Loaded,
+                                onDownloadQuotePdf = { quoteId, revisionId ->
+                                    val revSuffix = revisionId?.let { "?revisionId=$it" }.orEmpty()
+                                    workspaceViewModel.downloadAuthenticatedDocument(
+                                        url = "${TrustedOriginPolicy.PRODUCTION_URL}/api/quotes/$quoteId/pdf$revSuffix",
+                                        expectedMimeType = "application/pdf",
+                                        openPrintImmediately = false
+                                    )
+                                },
+                                onOpenConvertedJob = { jobId ->
+                                    jobsViewModel.load()
+                                    currentDestination = AppDestination.JOBS
+                                    jobsViewModel.openJob(jobId)
+                                }
                             )
 
                             AppDestination.MORE -> MoreRouterScreen(

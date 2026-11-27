@@ -13,7 +13,11 @@
   ],
   "templateKinds": [
     "quote",
+    "quote_revision",
+    "quote_followup",
     "booking_confirmation",
+    "deposit_receipt",
+    "move_day_dispatch",
     "reminder",
     "post_move_followup",
     "payment_request"
