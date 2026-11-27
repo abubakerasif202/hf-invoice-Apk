@@ -38,8 +38,20 @@ enum class QuoteStage(val key: String, val label: String) {
 /** Template kinds accepted by POST /api/crm render_template, with their button labels. */
 val QUOTE_TEMPLATE_KINDS: List<Pair<String, String>> = listOf(
     "quote" to "Quote",
+    "quote_revision" to "Revision",
+    "quote_followup" to "Quote Follow-up",
     "booking_confirmation" to "Confirmation",
+    "deposit_receipt" to "Deposit Receipt",
+    "move_day_dispatch" to "Crew Dispatch",
     "reminder" to "Reminder",
     "post_move_followup" to "Follow-up",
     "payment_request" to "Payment Request"
+)
+
+val ACCEPTANCE_METHODS: List<Pair<String, String>> = listOf(
+    "email" to "Email approval",
+    "portal" to "Customer portal",
+    "phone" to "Phone confirmation",
+    "signed_pdf" to "Signed PDF",
+    "in_person" to "In person"
 )

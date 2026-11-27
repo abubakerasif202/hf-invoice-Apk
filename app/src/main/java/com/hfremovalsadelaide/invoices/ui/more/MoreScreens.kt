@@ -327,6 +327,8 @@ private fun MoreRowItem(
 private fun StaffScreen(state: PlatformUiState, vm: PlatformViewModel) {
     val canManage = state.user?.can("staff.manage") == true
     var showInviteDialog by remember { mutableStateOf(false) }
+    var editingSubcontractor by remember { mutableStateOf<Pair<com.hfremovalsadelaide.invoices.data.StaffMember, com.hfremovalsadelaide.invoices.data.SubcontractorProfileRecord?>?>(null) }
+    val subByStaffId = remember(state.subcontractors) { state.subcontractors.associateBy { it.staffId } }
 
     Column(Modifier.fillMaxSize()) {
         if (canManage) {
@@ -378,8 +380,28 @@ private fun StaffScreen(state: PlatformUiState, vm: PlatformViewModel) {
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                        val isSub = member.employmentType == "subcontractor" || member.role == "subcontractor"
+                        val subProfile = subByStaffId[member.id]
+                        if (isSub && subProfile != null) {
+                            Text(
+                                buildString {
+                                    if (subProfile.companyName.isNotBlank()) append("${subProfile.companyName} · ")
+                                    append("Ins. expiry: ${subProfile.insuranceExpiry ?: "Not set"}")
+                                    subProfile.paymentTermsDays?.let { append(" · Net $it d") }
+                                    if (subProfile.insuranceExpired) append(" (EXPIRED)")
+                                    else if (subProfile.insuranceExpiringSoon) append(" (Expiring soon)")
+                                },
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (subProfile.insuranceExpired) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                         if (canManage) {
                             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                if (isSub) {
+                                    OutlinedButton(onClick = { editingSubcontractor = member to subProfile }) {
+                                        Text("Compliance & Terms")
+                                    }
+                                }
                                 OutlinedButton(onClick = { vm.resetStaffPassword(member.id) }) { Text("Issue Reset Token") }
                                 OutlinedButton(onClick = { vm.setStaffActive(member.id, !member.active) }) {
                                     Text(if (member.active) "Revoke Access" else "Restore Access")
@@ -390,6 +412,18 @@ private fun StaffScreen(state: PlatformUiState, vm: PlatformViewModel) {
                 }
             }
         }
+    }
+
+    editingSubcontractor?.let { (member, existing) ->
+        SubcontractorProfileDialog(
+            staffName = member.name,
+            existing = existing,
+            onDismiss = { editingSubcontractor = null },
+            onSave = { company, contact, phone, licence, insProv, insPol, insExp, termsDays, notes ->
+                editingSubcontractor = null
+                vm.saveSubcontractorProfile(member.id, company, contact, phone, licence, insProv, insPol, insExp, termsDays, notes)
+            }
+        )
     }
 
     if (showInviteDialog) {
@@ -796,6 +830,53 @@ private fun SubmitTimesheetDialog(
                 val b = breakMins.toIntOrNull() ?: 0
                 onSave(workDate, r, ot, b, reimb.trim(), notes.trim())
             }) { Text("Submit") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+@Composable
+private fun SubcontractorProfileDialog(
+    staffName: String,
+    existing: com.hfremovalsadelaide.invoices.data.SubcontractorProfileRecord?,
+    onDismiss: () -> Unit,
+    onSave: (String, String, String, String, String, String, String?, Int?, String) -> Unit
+) {
+    var companyName by remember { mutableStateOf(existing?.companyName.orEmpty()) }
+    var contactName by remember { mutableStateOf(existing?.contactName.orEmpty()) }
+    var contactPhone by remember { mutableStateOf(existing?.contactPhone.orEmpty()) }
+    var licenceNumber by remember { mutableStateOf(existing?.licenceNumber.orEmpty()) }
+    var insuranceProvider by remember { mutableStateOf(existing?.insuranceProvider.orEmpty()) }
+    var insurancePolicy by remember { mutableStateOf(existing?.insurancePolicy.orEmpty()) }
+    var insuranceExpiry by remember { mutableStateOf(existing?.insuranceExpiry.orEmpty()) }
+    var paymentTermsDays by remember { mutableStateOf(existing?.paymentTermsDays?.toString().orEmpty()) }
+    var notes by remember { mutableStateOf(existing?.notes.orEmpty()) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Subcontractor Compliance · $staffName") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(companyName, { companyName = it }, label = { Text("Company name") }, singleLine = true)
+                OutlinedTextField(contactName, { contactName = it }, label = { Text("Contact name") }, singleLine = true)
+                OutlinedTextField(contactPhone, { contactPhone = it }, label = { Text("Contact phone") }, singleLine = true)
+                OutlinedTextField(licenceNumber, { licenceNumber = it }, label = { Text("Licence number") }, singleLine = true)
+                OutlinedTextField(insuranceProvider, { insuranceProvider = it }, label = { Text("Insurance provider") }, singleLine = true)
+                OutlinedTextField(insurancePolicy, { insurancePolicy = it }, label = { Text("Insurance policy #") }, singleLine = true)
+                OutlinedTextField(insuranceExpiry, { insuranceExpiry = it }, label = { Text("Insurance expiry (YYYY-MM-DD)") }, singleLine = true)
+                OutlinedTextField(paymentTermsDays, { paymentTermsDays = it }, label = { Text("Payment terms (days 0–120)") }, singleLine = true)
+                OutlinedTextField(notes, { notes = it }, label = { Text("Compliance notes") })
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val terms = paymentTermsDays.trim().toIntOrNull()?.coerceIn(0, 120)
+                    val exp = insuranceExpiry.trim().takeIf { Regex("^\\d{4}-\\d{2}-\\d{2}$").matches(it) }
+                    onSave(companyName, contactName, contactPhone, licenceNumber, insuranceProvider, insurancePolicy, exp, terms, notes)
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = ForestGreen, contentColor = PureWhite)
+            ) { Text("Save Profile") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )

@@ -5,6 +5,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -31,13 +32,18 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.EventAvailable
 import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.MailOutline
 import androidx.compose.material.icons.rounded.People
 import androidx.compose.material.icons.rounded.Phone
+import androidx.compose.material.icons.rounded.PictureAsPdf
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -109,17 +115,21 @@ fun CustomersScreen(
     launchIntent: CrmLaunchIntent? = null,
     onLaunchIntentConsumed: () -> Unit = {},
     jobsLoaded: Boolean = true,
-    invoicesLoaded: Boolean = true
+    invoicesLoaded: Boolean = true,
+    onDownloadQuotePdf: (quoteId: String, revisionId: String?) -> Unit = { _, _ -> },
+    onOpenConvertedJob: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
     val crm = platformState.crm
     val canWrite = platformState.user?.can("crm.manage") == true
+    val canReadFinancials = platformState.user?.can("invoices.read") == true
+    val canConvertToBooking = canWrite && platformState.user?.can("jobs.assign") == true
     var activeTab by rememberSaveable { mutableStateOf(CrmTab.DIRECTORY) }
     var search by rememberSaveable { mutableStateOf("") }
     var stageFilter by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedCustomer by remember { mutableStateOf<CustomerSummary?>(null) }
+    var selectedQuoteId by remember { mutableStateOf<String?>(null) }
     var showCustomerDialog by remember { mutableStateOf(false) }
-    var showQuoteDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(launchIntent) {
         when (launchIntent) {
@@ -129,11 +139,49 @@ fun CustomersScreen(
             }
             CrmLaunchIntent.CREATE_QUOTE -> {
                 activeTab = CrmTab.QUOTES
-                if (canWrite) showQuoteDialog = true
+                if (canWrite) platformViewModel.openQuoteWizard()
             }
             null -> return@LaunchedEffect
         }
         onLaunchIntentConsumed()
+    }
+
+    val wizardDraft = platformState.quoteWizardDraft
+    if (platformState.showQuoteWizard && wizardDraft != null) {
+        BackHandler {
+            if (wizardDraft.stepIndex > 0) {
+                platformViewModel.updateQuoteWizardDraft { it.copy(stepIndex = it.stepIndex - 1) }
+            } else {
+                platformViewModel.closeQuoteWizard(clearSavedDraft = false)
+            }
+        }
+        QuotationWizardScreen(
+            draft = wizardDraft,
+            customers = crm?.customers.orEmpty(),
+            allJobs = allJobs,
+            allInvoices = allInvoices,
+            allQuotes = crm?.quotes.orEmpty(),
+            rateCards = platformState.rateCards,
+            catalogue = platformState.serviceCatalogue,
+            termsVersions = platformState.termsVersions.ifEmpty { crm?.approvedTerms.orEmpty() },
+            duplicateMatches = platformState.quoteDuplicateMatches,
+            priceResult = platformState.quotePricePreview,
+            pricingBusy = platformState.quotePricingBusy,
+            loadingModule = platformState.loadingModule,
+            onUpdateDraft = platformViewModel::updateQuoteWizardDraft,
+            onCheckDuplicates = platformViewModel::checkDuplicateCustomers,
+            onRefreshServerPrice = platformViewModel::refreshQuoteServerPrice,
+            onSaveDraftToServer = { d -> platformViewModel.saveQuoteWizardDraftToServer(d) },
+            onPreviewPdf = { qid -> onDownloadQuotePdf(qid, null) },
+            onIssueQuotation = { d, reason ->
+                platformViewModel.issueQuoteFromWizard(d, reason) { issuedId ->
+                    selectedQuoteId = issuedId
+                }
+            },
+            onClose = { clear -> platformViewModel.closeQuoteWizard(clear) },
+            modifier = modifier
+        )
+        return
     }
 
     Scaffold(
@@ -146,7 +194,8 @@ fun CustomersScreen(
             if (canWrite && activeTab != CrmTab.FOLLOW_UPS) {
                 FloatingActionButton(
                     onClick = {
-                        if (activeTab == CrmTab.DIRECTORY) showCustomerDialog = true else showQuoteDialog = true
+                        if (activeTab == CrmTab.DIRECTORY) showCustomerDialog = true
+                        else platformViewModel.openQuoteWizard(startFresh = false)
                     },
                     containerColor = ForestGreen,
                     contentColor = PureWhite
@@ -322,12 +371,33 @@ fun CustomersScreen(
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                         modifier = Modifier.fillMaxSize()
                     ) {
+                        if (canWrite && wizardDraft != null) {
+                            item {
+                                HfSectionCard(title = "Unfinished Encrypted Quotation Draft") {
+                                    Text(
+                                        text = "${wizardDraft.customerName.ifBlank { "New customer" }} · ${wizardDraft.segment} · Step ${wizardDraft.stepIndex + 1}/5",
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Button(
+                                            onClick = { platformViewModel.openQuoteWizard(startFresh = false) },
+                                            colors = ButtonDefaults.buttonColors(containerColor = ForestGreen, contentColor = PureWhite)
+                                        ) { Text("Resume Wizard") }
+                                        OutlinedButton(onClick = { platformViewModel.openQuoteWizard(startFresh = true) }) {
+                                            Text("Start New")
+                                        }
+                                    }
+                                }
+                            }
+                        }
                         if (quotes.isEmpty()) {
                             item {
                                 EmptyStateCard(
                                     icon = Icons.Rounded.People,
                                     title = "No quotes in this stage",
-                                    message = "Create a new quote enquiry using the + button."
+                                    message = "Create a quotation using the 5-step wizard (+ button).",
+                                    actionLabel = if (canWrite) "Launch Quotation Wizard" else null,
+                                    onAction = if (canWrite) ({ platformViewModel.openQuoteWizard(startFresh = true) }) else null
                                 )
                             }
                         } else {
@@ -335,9 +405,25 @@ fun CustomersScreen(
                                 QuotePipelineCard(
                                     quote = q,
                                     canWrite = canWrite,
+                                    canReadFinancials = canReadFinancials,
+                                    onOpenDetail = {
+                                        selectedQuoteId = q.id
+                                        platformViewModel.loadQuoteDetail(q.id)
+                                    },
                                     onAdvance = { next -> platformViewModel.advanceQuote(q.id, next) },
+                                    onDownloadPdf = { onDownloadQuotePdf(q.id, q.currentRevisionId) },
                                     onGenerateTemplate = { kind ->
-                                        platformViewModel.renderTemplate(kind, q.customerName, q.reference, q.estimatedTotal)
+                                        platformViewModel.renderTemplate(
+                                            kind = kind,
+                                            customerName = q.customerName,
+                                            reference = q.reference,
+                                            amount = q.estimatedTotal,
+                                            date = q.preferredDate,
+                                            pickup = q.pickup,
+                                            delivery = q.delivery,
+                                            truck = q.truckClass,
+                                            movers = q.movers
+                                        )
                                     }
                                 )
                             }
@@ -434,12 +520,63 @@ fun CustomersScreen(
         )
     }
 
-    if (showQuoteDialog) {
-        NewQuoteDialog(
-            onDismiss = { showQuoteDialog = false },
-            onSave = { name, segment, pickup, delivery, truck, total, notes ->
-                showQuoteDialog = false
-                platformViewModel.saveQuote(null, name, QuoteStage.INITIAL.key, segment, pickup, delivery, truck, total, notes)
+    val selectedQuote = selectedQuoteId?.let { id -> crm?.quotes.orEmpty().firstOrNull { it.id == id } }
+    if (selectedQuote != null) {
+        QuoteDetailBottomSheet(
+            quote = selectedQuote,
+            detail = platformState.activeQuoteDetail?.takeIf { it.quoteId == selectedQuote.id },
+            canWrite = canWrite,
+            canReadFinancials = canReadFinancials,
+            canConvertToBooking = canConvertToBooking,
+            onDismiss = { selectedQuoteId = null },
+            onRefresh = { platformViewModel.loadQuoteDetail(selectedQuote.id) },
+            onDownloadPdf = { revId -> onDownloadQuotePdf(selectedQuote.id, revId) },
+            onOpenRevisionWizard = { reason ->
+                selectedQuoteId = null
+                platformViewModel.openRevisionDraftInWizard(selectedQuote, reason)
+            },
+            onCloneVariation = { reason -> platformViewModel.cloneQuoteVariation(selectedQuote.id, reason) },
+            onAcceptRevision = { revId, method, notes ->
+                platformViewModel.acceptQuoteRevision(selectedQuote.id, revId, method, notes)
+            },
+            onConvertToBooking = {
+                platformViewModel.convertQuoteToBooking(selectedQuote.id) { jobId ->
+                    selectedQuoteId = null
+                    onOpenConvertedJob(jobId)
+                }
+            },
+            onOpenBookingJob = { jobId ->
+                selectedQuoteId = null
+                onOpenConvertedJob(jobId)
+            },
+            onRenderTemplate = { kind ->
+                platformViewModel.renderTemplate(
+                    kind = kind,
+                    customerName = selectedQuote.customerName,
+                    reference = selectedQuote.reference,
+                    amount = selectedQuote.estimatedTotal,
+                    date = selectedQuote.preferredDate,
+                    pickup = selectedQuote.pickup,
+                    delivery = selectedQuote.delivery,
+                    revisionNumber = selectedQuote.revisionCount.takeIf { it > 0 },
+                    truck = selectedQuote.truckClass,
+                    movers = selectedQuote.movers
+                )
+            }
+        )
+    }
+
+    val bookingConflictMsg = platformState.quoteBookingConflictMessage
+    if (bookingConflictMsg != null && selectedQuote != null) {
+        QuoteBookingConflictDialog(
+            conflictMessage = bookingConflictMsg,
+            canOverride = platformState.user?.can("jobs.override") == true,
+            onDismiss = { platformViewModel.dismissQuoteBookingConflict() },
+            onConfirmOverride = { reason ->
+                platformViewModel.convertQuoteToBooking(selectedQuote.id, reason) { jobId ->
+                    selectedQuoteId = null
+                    onOpenConvertedJob(jobId)
+                }
             }
         )
     }
@@ -490,7 +627,10 @@ fun CustomersScreen(
 private fun QuotePipelineCard(
     quote: QuoteRecord,
     canWrite: Boolean,
+    canReadFinancials: Boolean,
+    onOpenDetail: () -> Unit,
     onAdvance: (String) -> Unit,
+    onDownloadPdf: () -> Unit,
     onGenerateTemplate: (String) -> Unit
 ) {
     val nextStage = QuoteStage.next(quote.stage)
@@ -498,12 +638,26 @@ private fun QuotePipelineCard(
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onOpenDetail)
     ) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text("${quote.reference} · ${quote.customerName}", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                Text(
+                    "${quote.reference}${if (quote.revisionCount > 0) " · Rev ${quote.revisionCount}" else ""} · ${quote.customerName}",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f)
+                )
                 StatusBadge(QuoteStage.labelFor(quote.stage), MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.onPrimaryContainer)
+            }
+            if (quote.legacyStatus != null) {
+                Text(
+                    "Legacy record (${quote.legacyStatus}) — snapshot read-only.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.error
+                )
             }
             if (quote.duplicateOfCustomerId != null) {
                 Text(
@@ -516,22 +670,40 @@ private fun QuotePipelineCard(
                 Text("${quote.pickup} -> ${quote.delivery}", style = MaterialTheme.typography.bodySmall)
             }
             Text(
-                "${quote.segment.replaceFirstChar { it.uppercase() }} · ${quote.truckClass.ifBlank { "Truck TBC" }} · Est: ${quote.estimatedTotal?.let { "$$it" } ?: "TBC"}",
+                buildString {
+                    append(quote.segment.replaceFirstChar { it.uppercase() })
+                    append(" · ")
+                    append(quote.truckClass.ifBlank { "Truck TBC" })
+                    if (canReadFinancials) {
+                        append(" · Est: ")
+                        append(quote.estimatedTotal?.let { "$$it" } ?: "TBC")
+                    }
+                },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            if (canWrite) {
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (nextStage != null) {
-                        Button(
-                            onClick = { onAdvance(nextStage.key) },
-                            colors = ButtonDefaults.buttonColors(containerColor = ForestGreen, contentColor = PureWhite)
-                        ) { Text("Move to ${nextStage.label}") }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                OutlinedButton(onClick = onOpenDetail) {
+                    Text("Revisions & Actions")
+                }
+                if (canReadFinancials) {
+                    OutlinedButton(onClick = onDownloadPdf) {
+                        Icon(Icons.Rounded.PictureAsPdf, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.size(4.dp))
+                        Text("PDF")
                     }
+                }
+                if (canWrite && nextStage != null && quote.stage !in setOf("quote_prepared", "quote_sent", "accepted")) {
+                    Button(
+                        onClick = { onAdvance(nextStage.key) },
+                        colors = ButtonDefaults.buttonColors(containerColor = ForestGreen, contentColor = PureWhite)
+                    ) { Text("Move to ${nextStage.label}") }
+                }
+                if (canWrite) {
                     OutlinedButton(onClick = { onGenerateTemplate("quote") }) {
                         Icon(Icons.Rounded.Share, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.size(4.dp))
-                        Text("Quote Template")
+                        Text("Template")
                     }
                 }
             }
@@ -658,39 +830,235 @@ private fun NewCustomerDialog(
     )
 }
 
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-private fun NewQuoteDialog(
+private fun QuoteDetailBottomSheet(
+    quote: QuoteRecord,
+    detail: com.hfremovalsadelaide.invoices.data.QuoteDetailPayload?,
+    canWrite: Boolean,
+    canReadFinancials: Boolean,
+    canConvertToBooking: Boolean,
     onDismiss: () -> Unit,
-    onSave: (String, String, String, String, String, String, String) -> Unit
+    onRefresh: () -> Unit,
+    onDownloadPdf: (revisionId: String?) -> Unit,
+    onOpenRevisionWizard: (reason: String) -> Unit,
+    onCloneVariation: (reason: String) -> Unit,
+    onAcceptRevision: (revisionId: String, method: String, notes: String) -> Unit,
+    onConvertToBooking: () -> Unit,
+    onOpenBookingJob: (String) -> Unit,
+    onRenderTemplate: (String) -> Unit
 ) {
-    var name by remember { mutableStateOf("") }
-    var segment by remember { mutableStateOf("residential") }
-    var pickup by remember { mutableStateOf("") }
-    var delivery by remember { mutableStateOf("") }
-    var truck by remember { mutableStateOf("MR 12t") }
-    var total by remember { mutableStateOf("") }
-    var notes by remember { mutableStateOf("") }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("New Quote / Enquiry") },
-        text = {
-            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf("residential" to "Residential", "commercial" to "Commercial").forEach { (k, label) ->
-                        FilterChip(selected = segment == k, onClick = { segment = k }, label = { Text(label) })
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var revisionReason by remember { mutableStateOf("") }
+    var acceptTargetRevId by remember { mutableStateOf<String?>(null) }
+    var acceptMethod by remember { mutableStateOf("email") }
+    var acceptNotes by remember { mutableStateOf("") }
+
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.weight(1f)) {
+                    Text(quote.reference, style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                    Text("${quote.customerName} · ${quote.segment}", style = MaterialTheme.typography.bodySmall)
+                }
+                IconButton(onClick = onRefresh) { Icon(Icons.Rounded.Refresh, "Refresh quote detail") }
+            }
+
+            if (quote.legacyStatus != null) {
+                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
+                    Row(Modifier.padding(10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(Icons.Rounded.WarningAmber, null, tint = MaterialTheme.colorScheme.onErrorContainer)
+                        Text("Legacy snapshot (${quote.legacyStatus}) — preserved without silent repricing.", style = MaterialTheme.typography.bodySmall)
                     }
                 }
-                OutlinedTextField(name, { name = it }, label = { Text("Customer / Business name") }, singleLine = true)
-                OutlinedTextField(pickup, { pickup = it }, label = { Text("Pickup address") }, singleLine = true)
-                OutlinedTextField(delivery, { delivery = it }, label = { Text("Delivery address") }, singleLine = true)
-                OutlinedTextField(truck, { truck = it }, label = { Text("Truck class") }, singleLine = true)
-                OutlinedTextField(total, { total = it }, label = { Text("Estimated total (AUD)") }, singleLine = true)
-                OutlinedTextField(notes, { notes = it }, label = { Text("Notes") })
+            }
+
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (canReadFinancials) {
+                    OutlinedButton(onClick = { onDownloadPdf(quote.currentRevisionId) }) {
+                        Icon(Icons.Rounded.PictureAsPdf, null, Modifier.size(16.dp))
+                        Spacer(Modifier.size(4.dp))
+                        Text("Quote PDF")
+                    }
+                }
+                if (quote.jobId != null) {
+                    Button(
+                        onClick = { onOpenBookingJob(quote.jobId) },
+                        colors = ButtonDefaults.buttonColors(containerColor = ForestGreen, contentColor = PureWhite)
+                    ) {
+                        Icon(Icons.Rounded.EventAvailable, null, Modifier.size(16.dp))
+                        Spacer(Modifier.size(4.dp))
+                        Text("Open Booking")
+                    }
+                } else if (canConvertToBooking && quote.stage == "accepted") {
+                    Button(
+                        onClick = onConvertToBooking,
+                        colors = ButtonDefaults.buttonColors(containerColor = ForestGreen, contentColor = PureWhite)
+                    ) {
+                        Icon(Icons.Rounded.EventAvailable, null, Modifier.size(16.dp))
+                        Spacer(Modifier.size(4.dp))
+                        Text("Convert to Booking")
+                    }
+                }
+            }
+
+            if (canWrite && canReadFinancials) {
+                HfSectionCard(title = if (quote.acceptedRevisionId != null) "Post-Acceptance Variation" else "Revise Quotation") {
+                    OutlinedTextField(
+                        value = revisionReason,
+                        onValueChange = { revisionReason = it },
+                        label = { Text("Reason for change (min 3 chars)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    if (quote.acceptedRevisionId != null) {
+                        OutlinedButton(
+                            enabled = revisionReason.trim().length >= 3,
+                            onClick = { onCloneVariation(revisionReason.trim()) }
+                        ) { Text("Clone Variation Quote (Preserves Accepted)") }
+                    } else {
+                        OutlinedButton(
+                            enabled = revisionReason.trim().length >= 3,
+                            onClick = { onOpenRevisionWizard(revisionReason.trim()) }
+                        ) {
+                            Icon(Icons.Rounded.Edit, null, Modifier.size(16.dp))
+                            Spacer(Modifier.size(4.dp))
+                            Text("Create New Revision in Wizard")
+                        }
+                    }
+                }
+            }
+
+            HfSectionCard(title = "Issued Versions (${detail?.revisions?.size ?: quote.revisionCount})") {
+                val revs = detail?.revisions.orEmpty()
+                if (revs.isEmpty()) {
+                    Text("No issued revisions recorded yet.", style = MaterialTheme.typography.bodySmall)
+                } else {
+                    revs.forEach { rev ->
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                    Text("Revision #${rev.revisionNumber}", fontWeight = FontWeight.Bold)
+                                    StatusBadge(rev.status, MaterialTheme.colorScheme.secondaryContainer, MaterialTheme.colorScheme.onSecondaryContainer)
+                                }
+                                if (canReadFinancials && rev.total != null) {
+                                    Text("${if (rev.isEstimate) "Est." else "Fixed"} $${rev.total} · Valid until ${rev.validUntil ?: "-"}", style = MaterialTheme.typography.bodySmall)
+                                }
+                                if (rev.termsTitle != null) {
+                                    Text("Terms: v${rev.termsVersionNumber ?: 1} · ${rev.termsTitle}", style = MaterialTheme.typography.labelSmall)
+                                }
+                                if (rev.acceptedAt != null) {
+                                    Text("Accepted (${rev.acceptanceMethod}) by ${rev.acceptedByStaff ?: ""}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                                }
+                                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    if (canReadFinancials) {
+                                        OutlinedButton(onClick = { onDownloadPdf(rev.id) }) { Text("PDF") }
+                                    }
+                                    if (canWrite && canReadFinancials && rev.status == "issued" && quote.acceptedRevisionId == null) {
+                                        Button(
+                                            onClick = { acceptTargetRevId = rev.id },
+                                            colors = ButtonDefaults.buttonColors(containerColor = ForestGreen, contentColor = PureWhite)
+                                        ) {
+                                            Icon(Icons.Rounded.CheckCircle, null, Modifier.size(16.dp))
+                                            Spacer(Modifier.size(4.dp))
+                                            Text("Record Acceptance")
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (canWrite) {
+                Text("Communication Templates (manual review & send)", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    QUOTE_TEMPLATE_KINDS
+                        .filter { canReadFinancials || (it.first != "payment_request" && it.first != "deposit_receipt") }
+                        .forEach { (k, label) ->
+                            FilterChip(selected = false, onClick = { onRenderTemplate(k) }, label = { Text(label) })
+                        }
+                }
+            }
+            Spacer(Modifier.height(16.dp))
+        }
+    }
+
+    acceptTargetRevId?.let { revId ->
+        AlertDialog(
+            onDismissRequest = { acceptTargetRevId = null },
+            title = { Text("Record Customer Acceptance") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Acceptance locks this exact quotation revision cleanly.", style = MaterialTheme.typography.bodySmall)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        ACCEPTANCE_METHODS.forEach { (k, lbl) ->
+                            FilterChip(selected = acceptMethod == k, onClick = { acceptMethod = k }, label = { Text(lbl) })
+                        }
+                    }
+                    OutlinedTextField(
+                        value = acceptNotes,
+                        onValueChange = { acceptNotes = it },
+                        label = { Text("Acceptance notes") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        acceptTargetRevId = null
+                        onAcceptRevision(revId, acceptMethod, acceptNotes)
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = ForestGreen, contentColor = PureWhite)
+                ) { Text("Confirm Acceptance") }
+            },
+            dismissButton = { TextButton(onClick = { acceptTargetRevId = null }) { Text("Cancel") } }
+        )
+    }
+}
+
+@Composable
+private fun QuoteBookingConflictDialog(
+    conflictMessage: String,
+    canOverride: Boolean,
+    onDismiss: () -> Unit,
+    onConfirmOverride: (String) -> Unit
+) {
+    var reason by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Scheduling Conflict Detected") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(conflictMessage, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                if (canOverride) {
+                    OutlinedTextField(
+                        value = reason,
+                        onValueChange = { reason = it },
+                        label = { Text("Authorised override reason (min 5 chars)") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             }
         },
         confirmButton = {
-            Button(onClick = { onSave(name.trim(), segment, pickup.trim(), delivery.trim(), truck.trim(), total.trim(), notes.trim()) }, enabled = name.isNotBlank()) {
-                Text("Create Quote")
+            if (canOverride) {
+                Button(
+                    enabled = reason.trim().length >= 5,
+                    onClick = { onConfirmOverride(reason.trim()) },
+                    colors = ButtonDefaults.buttonColors(containerColor = ForestGreen, contentColor = PureWhite)
+                ) { Text("Override & Book") }
             }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
