@@ -1,0 +1,21 @@
+{
+  "quoteStages": [
+    "new_enquiry",
+    "quote_prepared",
+    "quote_sent",
+    "accepted",
+    "booking_confirmed",
+    "job_completed",
+    "invoiced",
+    "paid",
+    "declined",
+    "archived"
+  ],
+  "templateKinds": [
+    "quote",
+    "booking_confirmation",
+    "reminder",
+    "post_move_followup",
+    "payment_request"
+  ]
+}
